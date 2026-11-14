@@ -3,9 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import PostsTable from "./posts-table";
 import PostsWaterfall from "./posts-waterfall";
-import type { HomePost } from "@/app/(protected)/page";
+import type { HomePost } from "@/lib/post-types";
 
-type CategoryMeta = { label: string; tagBg: string; tagText: string; emoji: string };
+type CategoryMeta = { label: string; tagBg: string; tagText: string };
 
 interface Props {
   posts: HomePost[];

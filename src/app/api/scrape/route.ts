@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserByPasskey } from "@/lib/passkey";
 import { query } from "@/lib/db";
-import { peerStore } from "@/app/api/announce/route";
+import { peerStore, bodyBytes } from "@/app/api/announce/route";
 
 function bencodeString(s: string): Buffer {
   return Buffer.from(`${Buffer.byteLength(s)}:${s}`);
@@ -33,15 +33,21 @@ export async function GET(req: NextRequest) {
   const infoHash = params.get("ih") || params.get("info_hash") || "";
 
   if (passkey.length !== 32 || infoHash.length !== 40 || !/^[a-f0-9]+$/i.test(infoHash)) {
-    return new NextResponse(bencodeDict({ "failure reason": bencodeString("invalid params") }), {
-      headers: { "Content-Type": "text/plain" },
-    });
+    return new NextResponse(
+      bodyBytes(bencodeDict({ "failure reason": bencodeString("invalid params") })),
+      {
+        headers: { "Content-Type": "text/plain" },
+      },
+    );
   }
   const email = await getUserByPasskey(passkey);
   if (!email) {
-    return new NextResponse(bencodeDict({ "failure reason": bencodeString("invalid passkey") }), {
-      headers: { "Content-Type": "text/plain" },
-    });
+    return new NextResponse(
+      bodyBytes(bencodeDict({ "failure reason": bencodeString("invalid passkey") })),
+      {
+        headers: { "Content-Type": "text/plain" },
+      },
+    );
   }
 
   const peers = peerStore.get(infoHash);
@@ -67,7 +73,7 @@ export async function GET(req: NextRequest) {
     downloaded: bencodeInt(dlRows[0]?.download_count ?? 0),
   });
 
-  return new NextResponse(bencodeDict({ files: bencodeDict(fileDict) }), {
+  return new NextResponse(bodyBytes(bencodeDict({ files: bencodeDict(fileDict) })), {
     headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
   });
 }

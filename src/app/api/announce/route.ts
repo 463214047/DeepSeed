@@ -104,10 +104,19 @@ function bencodeDict(obj: Record<string, Buffer>): Buffer {
   return Buffer.concat(parts);
 }
 
-function errorResponse(msg: string): Buffer {
-  return bencodeDict({
-    "failure reason": bencodeString(msg),
-  });
+/** Buffer → ArrayBuffer 支撑的 Uint8Array（满足 Response BodyInit 类型要求） */
+export function bodyBytes(buf: Buffer): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(buf.byteLength);
+  out.set(buf);
+  return out;
+}
+
+function errorResponse(msg: string): Uint8Array<ArrayBuffer> {
+  return bodyBytes(
+    bencodeDict({
+      "failure reason": bencodeString(msg),
+    }),
+  );
 }
 
 function peerKey(email: string, peerId: string): string {
@@ -295,7 +304,7 @@ export async function GET(req: NextRequest) {
     response["peers"] = bencodeString("");
   }
 
-  return new NextResponse(bencodeDict(response), {
+  return new NextResponse(bodyBytes(bencodeDict(response)), {
     headers: {
       "Content-Type": "text/plain",
       "Cache-Control": "no-store",

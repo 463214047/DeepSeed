@@ -20,6 +20,13 @@ import {
   type BencodeValue,
 } from "@/lib/bencode";
 
+/** Buffer → ArrayBuffer 支撑的 Uint8Array（满足 Response BodyInit 类型要求） */
+function bodyBytes(buf: Buffer): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(buf.byteLength);
+  out.set(buf);
+  return out;
+}
+
 // torrent 的 announce URL 应该指向 /api/announce
 // 但 Next.js dev server 端口可能是 3000 — 我们用相对 URL + 让 tracker route 里自己识别 origin
 // 更简单的做法：用 NEXT_PUBLIC_TRACKER_URL env，没有就 fallback 到当前 host + /api/announce
@@ -100,7 +107,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const filenameHeader = isAscii
       ? `filename="${rawName}"`
       : `filename="download.torrent"; filename*=UTF-8''${encodeURIComponent(rawName)}`;
-    return new NextResponse(outBuf, {
+    return new NextResponse(bodyBytes(outBuf), {
       headers: {
         "Content-Type": "application/x-bittorrent",
         "Content-Disposition": `attachment; ${filenameHeader}`,

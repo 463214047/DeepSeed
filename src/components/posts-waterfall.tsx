@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import Link from "next/link";
-import type { HomePost } from "@/app/(protected)/page";
+import type { HomePost } from "@/lib/post-types";
 import PostTag from "./post-tag";
 
 type CategoryMeta = { label: string; tagBg: string; tagText: string };

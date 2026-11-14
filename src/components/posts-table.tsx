@@ -3,7 +3,7 @@
 import { useState, useMemo, memo } from "react";
 import Link from "next/link";
 import { ArrowUp, ChevronDown, ChevronUp, ChevronsUpDown, Clock, Database } from "lucide-react";
-import type { HomePost } from "@/app/(protected)/page";
+import type { HomePost } from "@/lib/post-types";
 import PostTag from "./post-tag";
 
 type SortKey = "created_at" | "torrent_size" | "seed_count";
