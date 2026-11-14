@@ -1,4 +1,5 @@
 import { query, ensureSchema } from "@/lib/db";
+import { extractTmdbRef, readCachedPosters, tmdbKey, type TmdbRef } from "@/lib/tmdb";
 import ListContainer from "@/components/list-container";
 
 export const metadata = {
@@ -39,6 +40,8 @@ export type TorrentPost = {
   tags: string[] | null;
   cover_url: string | null;
   screenshot_urls: string[] | null;
+  /** TMDB 海报（解析自外链中的 TMDB 作品链接，优先作为瀑布流封面） */
+  tmdb_poster?: string | null;
   torrent_name: string | null;
   torrent_size: number | null;
   seed_count: number;
@@ -59,9 +62,9 @@ async function fetchPosts(): Promise<TorrentPost[]> {
     schemaEnsured = true;
   }
   try {
-    const rows = await query<TorrentPost>(
+    const rows = await query<TorrentPost & { external_link: string | null }>(
       `SELECT p.id, p.category, p.title, p.subtitle,
-              p.tags, p.cover_url, p.screenshot_urls,
+              p.tags, p.cover_url, p.screenshot_urls, p.external_link,
               p.author_email, p.anonymous,
               CASE WHEN p.anonymous THEN NULL ELSE p.author_name END AS author_name,
               p.torrent_name, p.torrent_size,
@@ -73,17 +76,31 @@ async function fetchPosts(): Promise<TorrentPost[]> {
        ORDER BY p.hot DESC, p.created_at DESC
        LIMIT 30`,
     );
+
+    // 解析每个帖子的 TMDB 作品引用 → 直接读本地已缓存的海报
+    const refsByPost = new Map<string, TmdbRef>();
+    for (const row of rows) {
+      const ref = extractTmdbRef(row.external_link);
+      if (ref) refsByPost.set(row.id, ref);
+    }
+    const posters = await readCachedPosters([...refsByPost.values()]);
+
     // pg 的 numeric/bigint 类型返回的是 string — 统一转 number
-    return rows.map((r) => ({
-      ...r,
-      anonymous: Boolean(r.anonymous),
-      hot: Boolean(r.hot),
-      torrent_size: r.torrent_size != null ? Number(r.torrent_size) : null,
-      seed_count: Number(r.seed_count ?? 0),
-      leech_count: Number(r.leech_count ?? 0),
-      favorite_count: Number(r.favorite_count ?? 0),
-      download_count: Number(r.download_count ?? 0),
-    }));
+    return rows.map((r) => {
+      const ref = refsByPost.get(r.id);
+      const { external_link: _externalLink, ...rest } = r;
+      return {
+        ...rest,
+        tmdb_poster: ref ? (posters.get(tmdbKey(ref)) ?? null) : null,
+        anonymous: Boolean(r.anonymous),
+        hot: Boolean(r.hot),
+        torrent_size: r.torrent_size != null ? Number(r.torrent_size) : null,
+        seed_count: Number(r.seed_count ?? 0),
+        leech_count: Number(r.leech_count ?? 0),
+        favorite_count: Number(r.favorite_count ?? 0),
+        download_count: Number(r.download_count ?? 0),
+      };
+    });
   } catch {
     return [];
   }

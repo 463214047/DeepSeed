@@ -191,3 +191,41 @@ export async function fetchTmdbInfo(ref: TmdbRef): Promise<TmdbInfo | null> {
   // 刷新失败 → 用旧缓存兜底
   return cached?.data ?? null;
 }
+
+export function tmdbKey(ref: TmdbRef): string {
+  return `${ref.mediaType}:${ref.id}`;
+}
+
+/**
+ * 批量读取已缓存的 TMDB 海报（只读缓存，不发网络请求）
+ * 返回 Map，key 见 tmdbKey()
+ */
+export async function readCachedPosters(refs: TmdbRef[]): Promise<Map<string, string>> {
+  const posters = new Map<string, string>();
+  if (refs.length === 0) return posters;
+
+  const unique = new Map<string, TmdbRef>();
+  for (const ref of refs) unique.set(tmdbKey(ref), ref);
+  const list = [...unique.values()];
+
+  try {
+    await ensureOnce();
+    const params: unknown[] = [];
+    const tuples = list.map((ref, i) => {
+      params.push(ref.mediaType, ref.id);
+      return `($${i * 2 + 1}, $${i * 2 + 2})`;
+    });
+    const rows = await query<{ media_type: string; tmdb_id: string; poster: string | null }>(
+      `SELECT media_type, tmdb_id::text AS tmdb_id, data->>'posterUrl' AS poster
+         FROM public.tmdb_cache
+        WHERE (media_type, tmdb_id) IN (${tuples.join(", ")})`,
+      params,
+    );
+    for (const row of rows) {
+      if (row.poster) posters.set(`${row.media_type}:${row.tmdb_id}`, row.poster);
+    }
+  } catch (err) {
+    console.warn("[TMDB] 批量读海报失败:", err instanceof Error ? err.message : err);
+  }
+  return posters;
+}

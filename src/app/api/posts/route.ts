@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { query, ensureSchema } from "@/lib/db";
+import { extractTmdbRef, readCachedPosters, tmdbKey, type TmdbRef } from "@/lib/tmdb";
 import { parseTorrentTotalSize, parseTorrentInfoHash } from "@/lib/bencode";
 import { validateExternalLinks, serializeExternalLinks } from "@/lib/external-links";
 
@@ -305,7 +306,7 @@ export async function GET(req: Request) {
               anonymous, status,
               CASE WHEN anonymous THEN NULL ELSE author_name END AS author_name,
               anonymous AS _anon,
-              tags, cover_url, screenshot_urls,
+              tags, cover_url, screenshot_urls, external_link,
               torrent_name, torrent_size,
               hot, view_count, like_count, favorite_count, comment_count,
               seed_count, leech_count, download_count,
@@ -317,8 +318,20 @@ export async function GET(req: Request) {
       params,
     );
 
+    // 瀑布流封面优先用 TMDB 海报（轮询接口只读缓存，不额外请求 TMDB）
+    const refsByPost = new Map<string, TmdbRef>();
+    for (const row of rows) {
+      const ref = extractTmdbRef(row.external_link);
+      if (ref) refsByPost.set(row.id, ref);
+    }
+    const posters = await readCachedPosters([...refsByPost.values()]);
+
     // 匿名帖子：替换作者显示名，隐藏 email
     // pg 的 numeric/bigint 类型返回的是 string — 全部转成 number
+    const posterOf = (postId: string): string | null => {
+      const ref = refsByPost.get(postId);
+      return ref ? (posters.get(tmdbKey(ref)) ?? null) : null;
+    };
     const list = rows.map((r: any) => ({
       id: r.id,
       post_type: r.post_type ?? "torrent",
@@ -329,6 +342,7 @@ export async function GET(req: Request) {
       tags: r.tags,
       cover_url: r.cover_url,
       screenshot_urls: r.screenshot_urls,
+      tmdb_poster: posterOf(r.id),
       torrent_name: r.torrent_name ?? null,
       torrent_size: r.torrent_size != null ? Number(r.torrent_size) : null,
       hot: Boolean(r.hot),

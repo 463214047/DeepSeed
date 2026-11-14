@@ -45,7 +45,7 @@ export default function MediaGallery({ coverUrl, screenshotUrls, title }: Props)
     <>
       <figure className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm [[data-background=tohru]_&]:bg-transparent">
         <figcaption className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/70 px-5 py-3">
-          <span className="inline-flex size-6 items-center justify-center rounded-md bg-slate-900 text-slate-50 text-[10px] font-bold">
+          <span className="inline-flex size-6 items-center justify-center rounded-md bg-brand-600 text-white text-[10px] font-bold">
             🖼
           </span>
           <span className="text-sm font-semibold text-slate-800">

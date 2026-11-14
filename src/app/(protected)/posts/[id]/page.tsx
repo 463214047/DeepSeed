@@ -324,7 +324,11 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
                       </span>
                     )}
                     {post.subtitle && (
-                      <span data-no-translate className="min-w-0 truncate" title={post.subtitle}>
+                      <span
+                        data-no-translate
+                        className="min-w-0 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_70%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_70%,transparent)]"
+                        title={post.subtitle}
+                      >
                         {post.subtitle}
                       </span>
                     )}
@@ -543,7 +547,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ id:
               {/* 标题栏 */}
               <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-5 py-3">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex size-6 items-center justify-center rounded-md bg-slate-900 text-slate-50 text-[10px] font-bold">
+                  <span className="inline-flex size-6 items-center justify-center rounded-md bg-brand-600 text-white text-[10px] font-bold">
                     M
                   </span>
                   <span className="text-sm font-semibold text-slate-800">MediaInfo</span>

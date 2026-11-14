@@ -179,7 +179,7 @@ function PostsTable({ posts, categoryMeta }: Props) {
                         {post.subtitle && (
                           <span
                             data-no-translate
-                            className="min-w-0 flex-1 truncate"
+                            className="min-w-0 flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_70%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_70%,transparent)]"
                             title={post.subtitle}
                           >
                             {post.subtitle}

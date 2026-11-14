@@ -303,7 +303,7 @@ export default function SecurityClient({ mode }: { mode: SecurityMode }) {
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-600">
-                    确认新密码
+                    确认密码
                   </label>
                   <input
                     type="password"

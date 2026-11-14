@@ -41,6 +41,7 @@ export default function Editor({
   placeholder = "写点什么…",
   compact = false,
   collapsibleToolbar = false,
+  contentClassName,
 }: {
   content: string;
   onChange: (html: string) => void;
@@ -50,6 +51,8 @@ export default function Editor({
   compact?: boolean;
   /** 工具栏默认隐藏，点击「格式」按钮展开 */
   collapsibleToolbar?: boolean;
+  /** 追加到正文区的样式（如固定高度 + 内部滚动，避免内容增减时容器高度跳动） */
+  contentClassName?: string;
 }) {
   // 用于强制 React 重渲染 — tiptap 的 isActive 只在组件重渲染时才重新计算
   const [, forceRender] = useState(0);
@@ -99,7 +102,9 @@ export default function Editor({
     content,
     editorProps: {
       attributes: {
-        class: compact ? CONTENT_CLASS_COMPACT : CONTENT_CLASS,
+        class:
+          (compact ? CONTENT_CLASS_COMPACT : CONTENT_CLASS) +
+          (contentClassName ? ` ${contentClassName}` : ""),
       },
       handlePaste: (view, event) => {
         const text = event.clipboardData?.getData("text/plain") ?? "";

@@ -22,7 +22,7 @@ export default function TmdbIntroCard({ info }: { info: TmdbInfo }) {
       {/* 标题栏 */}
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-5 py-3">
         <div className="flex items-center gap-2">
-          <span className="inline-flex size-6 items-center justify-center rounded-md bg-slate-900 text-slate-50">
+          <span className="inline-flex size-6 items-center justify-center rounded-md bg-brand-600 text-white">
             <Film size={13} strokeWidth={1.5} />
           </span>
           <span className="text-sm font-semibold text-slate-800">作品介绍</span>

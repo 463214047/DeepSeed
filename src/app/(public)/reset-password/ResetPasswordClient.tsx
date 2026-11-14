@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Spinner } from "../login/LoginForm";
 
 export default function ResetPasswordClient({ email }: { email: string | null }) {
   const router = useRouter();
@@ -45,13 +46,13 @@ export default function ResetPasswordClient({ email }: { email: string | null })
       } | null;
       if (!res.ok || !data?.ok) {
         setError(data?.message ?? "重置失败，请稍后重试");
+        setBusy(false);
         return;
       }
-      // 密码已保存，直接进入站点（提交即登录）
+      // 密码已保存：保持“保存中…”与按钮禁用，直到跳转完成
       router.replace("/");
     } catch {
       setError("网络异常，请稍后重试");
-    } finally {
       setBusy(false);
     }
   }
@@ -63,18 +64,46 @@ export default function ResetPasswordClient({ email }: { email: string | null })
 
         <p
           className={`mb-6 min-h-[20px] text-center text-sm ${
-            error ? "font-medium text-red-500" : "text-slate-500"
+            error
+              ? "font-medium text-red-500"
+              : busy
+                ? "font-medium text-brand-700"
+                : "text-slate-500"
           }`}
           role={error ? "alert" : "status"}
           aria-live="polite"
         >
-          {error ?? (verifiedEmail ? "" : "请先通过 GitHub 验证身份")}
+          {error ? (
+            error
+          ) : busy ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner />
+              保存中…
+            </span>
+          ) : verifiedEmail ? (
+            ""
+          ) : (
+            "请先通过 GitHub 验证身份"
+          )}
         </p>
 
         {verifiedEmail ? (
           <form className="w-full space-y-3" onSubmit={handleSubmit} noValidate>
-            <div className="rounded-xl border border-brand-200 bg-brand-50/70 px-4 py-3 text-sm text-brand-800">
-              已验证邮箱：<span className="font-semibold">{verifiedEmail}</span>
+            <div className="flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50/70 px-4 py-3 text-sm text-brand-800">
+              <span className="grid size-5 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
+                <svg viewBox="0 0 20 20" fill="none" className="size-3.5" aria-hidden="true">
+                  <path
+                    d="M4.5 10.5l3.5 3.5 7.5-7.5"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <span>
+                已验证邮箱：<span className="font-semibold">{verifiedEmail}</span>
+              </span>
             </div>
 
             <div className="space-y-1">
@@ -128,7 +157,7 @@ export default function ResetPasswordClient({ email }: { email: string | null })
               disabled={disabled}
               className="disabled-primary h-[48px] w-full rounded-[14px] bg-brand-600 text-[15px] font-bold text-white shadow-lg shadow-brand-600/20 transition hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-xl hover:shadow-brand-600/30 disabled:translate-y-0"
             >
-              {busy ? "登录中…" : "登录"}
+              保存
             </Button>
           </form>
         ) : (

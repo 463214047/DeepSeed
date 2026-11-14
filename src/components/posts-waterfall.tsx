@@ -41,7 +41,7 @@ function PostsWaterfall({ posts, categoryMeta, fallbackGradient }: Props) {
       {posts.map((post) => {
         const meta = categoryMeta[post.category];
         const gradient = fallbackGradient[post.category] ?? "from-slate-400 to-slate-500";
-        const cover = post.cover_url ?? post.screenshot_urls?.[0] ?? null;
+        const cover = post.tmdb_poster ?? post.cover_url ?? post.screenshot_urls?.[0] ?? null;
 
         return (
           <Link
@@ -87,7 +87,7 @@ function PostsWaterfall({ posts, categoryMeta, fallbackGradient }: Props) {
               {post.subtitle && (
                 <p
                   data-no-translate
-                  className="mt-0.5 line-clamp-1 text-[12px] text-slate-500"
+                  className="mt-0.5 overflow-hidden whitespace-nowrap text-[12px] text-slate-500 [mask-image:linear-gradient(to_right,black_70%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_70%,transparent)]"
                   title={post.subtitle}
                 >
                   {post.subtitle}

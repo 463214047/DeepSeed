@@ -255,7 +255,8 @@ button:disabled,
 
 @media (prefers-reduced-motion: reduce) {
   /* 加载指示器（.animate-spin / .mSpin）仍需旋转，避免用户误以为操作卡死 */
-  *:not(.animate-spin):not(.mSpin),
+  /* .dsToast：轻提醒的展开/收起动效，保留以免提示生硬闪现 */
+  *:not(.animate-spin):not(.mSpin):not(.dsToast),
   *::before,
   *::after {
     animation: none !important;

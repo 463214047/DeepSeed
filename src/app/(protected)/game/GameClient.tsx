@@ -53,9 +53,9 @@ export default function GameClient(props: {
 
     const POOL: Record<number, PoolItem[]> = {
       5: [
-        { name: "彩虹ID", type: "rainbow", dayMin: 30, dayMax: 365, w: 0 },
-        { name: "魔力", type: "magic", min: 800, max: 2000, w: 0 },
-        { name: "托尔", type: "tohru", w: 1.0 },
+        { name: "彩虹ID", type: "rainbow", dayMin: 30, dayMax: 365, w: 0.45 },
+        { name: "魔力", type: "magic", min: 800, max: 2000, w: 0.45 },
+        { name: "托尔", type: "tohru", w: 0.1 },
       ],
       4: [
         { name: "彩虹ID", type: "rainbow", dayMin: 7, dayMax: 90, w: 1.0 },
@@ -95,9 +95,6 @@ export default function GameClient(props: {
         let rate5 = 0.006;
         if (n5 > 73) rate5 = 0.006 + 0.06 * (n5 - 73);
         if (n5 >= 90) rate5 = 1;
-
-        // TEMP 调试：五星必中，便于查看托尔奖品卡
-        rate5 = 1;
 
         if (Math.random() < rate5) {
           rarity = 5;
@@ -465,7 +462,7 @@ export default function GameClient(props: {
         </p>
         <p style="font-size:12.5px;color:#93a8c4">
           <b style="color:#ffd98a">奖励一览：</b><br>
-          ★★★★★　贵宾、随机奖品、魔力<br>
+          ★★★★★　托尔、彩虹ID、魔力<br>
           ★★★★　彩虹ID、魔力<br>
           ★★★　魔力
         </p>`);

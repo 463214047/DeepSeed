@@ -457,7 +457,7 @@ export default function LoginForm() {
 }
 
 /* ---------- 加载旋转图标 — requestAnimationFrame 驱动，不依赖 CSS keyframes ---------- */
-function Spinner() {
+export function Spinner() {
   const [rot, setRot] = useState(0);
   const rafRef = useRef<number | null>(null);
 

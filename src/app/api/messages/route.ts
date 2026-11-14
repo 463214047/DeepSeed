@@ -49,13 +49,15 @@ export async function POST(req: Request) {
     let conversationId = body.conversation_id;
 
     // 联系管理：收件人由服务端解析，避免前端写死的邮箱与真实管理员不一致
+    // 多个管理员时优先选非本人账号；只有自己一个管理员时允许发给自己
     let to = body.to?.trim();
     if (!conversationId && body.toAdmin) {
       const admins = await query<{ email: string }>(
         `SELECT email FROM public.account_users
           WHERE role = 'admin'
-          ORDER BY created_at ASC
+          ORDER BY (email = $1) ASC, created_at ASC
           LIMIT 1`,
+        [sender],
       );
       if (admins.length === 0) {
         return NextResponse.json(
@@ -68,8 +70,6 @@ export async function POST(req: Request) {
 
     if (!conversationId) {
       if (!to) return NextResponse.json({ ok: false, message: "缺少收件人" }, { status: 400 });
-      if (to === sender)
-        return NextResponse.json({ ok: false, message: "不能给自己发消息" }, { status: 400 });
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(to))

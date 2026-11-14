@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Send, TriangleAlert } from "lucide-react";
 import Editor from "@/components/editor";
 
 export default function ContactForm() {
   const [body, setBody] = useState("");
-  const [editorKey, setEditorKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<null | { ok: boolean; msg: string }>(null);
   const [toastVisible, setToastVisible] = useState(false);
@@ -20,12 +20,17 @@ export default function ContactForm() {
 
     const duration = toast.ok ? 2400 : 3400;
     setToastVisible(false);
-    const frame = requestAnimationFrame(() => setToastVisible(true));
+    // 双 rAF：确保初始（隐藏）状态真正绘制过一帧，过渡才有起点，否则会瞬间出现
+    let frame2 = 0;
+    const frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => setToastVisible(true));
+    });
     const hide = setTimeout(() => setToastVisible(false), duration);
-    const clear = setTimeout(() => setToast(null), duration + 280);
+    const clear = setTimeout(() => setToast(null), duration + 320);
 
     return () => {
-      cancelAnimationFrame(frame);
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
       clearTimeout(hide);
       clearTimeout(clear);
     };
@@ -49,9 +54,7 @@ export default function ContactForm() {
       const data = await res.json();
       if (data.ok) {
         setToast({ ok: true, msg: "已送达，管理会尽快处理。" });
-        setBody("");
-        // 通过重建让编辑器清空
-        setEditorKey((key) => key + 1);
+        // 发送成功后保留编辑内容，方便用户继续补充或复制
       } else {
         setToast({ ok: false, msg: data.message ?? "发送失败" });
       }
@@ -65,34 +68,36 @@ export default function ContactForm() {
   return (
     <div className="space-y-4">
       <Editor
-        key={editorKey}
         content={body}
         onChange={setBody}
         compact
         placeholder="请描述你的问题…"
+        contentClassName="h-[300px] overflow-y-auto"
       />
 
-      {/* 轻提醒 */}
-      {toast && (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`fixed left-1/2 top-20 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl px-6 py-3.5 text-sm font-semibold text-white ring-1 ring-white/25 backdrop-blur-sm transition-all duration-300 ease-out ${
-            toast.ok
-              ? "bg-gradient-to-r from-brand-400 via-brand-500 to-brand-600 shadow-[0_16px_40px_-10px_var(--brand-500)]"
-              : "bg-gradient-to-r from-brand-600 via-brand-700 to-brand-800 shadow-[0_16px_40px_-10px_var(--brand-700)]"
-          } ${toastVisible ? "translate-y-0 scale-100 opacity-100" : "-translate-y-4 scale-90 opacity-0"}`}
-        >
-          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-white/25">
-            {toast.ok ? (
-              <Check className="size-4" strokeWidth={3} />
-            ) : (
-              <TriangleAlert className="size-4" strokeWidth={2.4} />
-            )}
-          </span>
-          {toast.msg}
-        </div>
-      )}
+      {/* 轻提醒 — 挂到 body，避免被父级 transform / backdrop-filter 影响而抖动 */}
+      {toast &&
+        createPortal(
+          <div
+            role="status"
+            aria-live="polite"
+            className={`dsToast pointer-events-none fixed left-1/2 top-20 z-[100] flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-2xl px-6 py-3.5 text-sm font-semibold text-white ring-1 ring-white/25 transition-[opacity,translate] duration-300 ease-out ${
+              toast.ok
+                ? "bg-gradient-to-r from-brand-400 via-brand-500 to-brand-600 shadow-[0_16px_40px_-10px_var(--brand-500)]"
+                : "bg-gradient-to-r from-brand-600 via-brand-700 to-brand-800 shadow-[0_16px_40px_-10px_var(--brand-700)]"
+            } ${toastVisible ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"}`}
+          >
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-white/25">
+              {toast.ok ? (
+                <Check className="size-4" strokeWidth={3} />
+              ) : (
+                <TriangleAlert className="size-4" strokeWidth={2.4} />
+              )}
+            </span>
+            {toast.msg}
+          </div>,
+          document.body,
+        )}
 
       {/* 底部按钮 */}
       <div className="flex items-center justify-end gap-2 pt-2">
