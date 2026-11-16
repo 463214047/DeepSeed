@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserByPasskey } from "@/lib/passkey";
 import { query } from "@/lib/db";
-import { peerStore, bodyBytes } from "@/app/api/announce/route";
+import { bodyBytes } from "@/app/api/announce/route";
 
 function bencodeString(s: string): Buffer {
   return Buffer.from(`${Buffer.byteLength(s)}:${s}`);
@@ -50,15 +50,15 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const peers = peerStore.get(infoHash);
-  let complete = 0,
-    incomplete = 0;
-  if (peers) {
-    for (const p of peers.values()) {
-      if (p.left === 0) complete++;
-      else incomplete++;
-    }
-  }
+  const statsRows = await query<{ complete: number; incomplete: number }>(
+    `SELECT COUNT(*) FILTER (WHERE left_bytes = 0)::int AS complete,
+            COUNT(*) FILTER (WHERE left_bytes > 0)::int AS incomplete
+       FROM public.torrent_peers
+      WHERE info_hash = $1 AND last_seen > NOW() - INTERVAL '15 minutes'`,
+    [infoHash],
+  );
+  const complete = statsRows[0]?.complete ?? 0;
+  const incomplete = statsRows[0]?.incomplete ?? 0;
 
   const dlRows = await query<{ download_count: number }>(
     `SELECT download_count FROM public.posts

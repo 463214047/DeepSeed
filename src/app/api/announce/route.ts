@@ -6,78 +6,28 @@
  * 返回: bencoded response（紧凑 peer 列表）
  *
  * 关键设计：
- *   - 活跃 peer 存在内存 Map（info_hash → Map<peerKey, peer>），每分钟过期
- *   - 累计上传下载写入 PG（user_torrent_stats）——异步不阻塞响应
+ *   - 活跃 peer 落库（torrent_peers 表），15 分钟无心跳视为掉线
+ *     —— 原先存在进程内存 Map，无状态/多实例部署下各实例互相看不见，计数会错
+ *   - 累计上传下载写入 PG（user_torrent_stats）
+ *   - seed/leech/download 计数统一由 DB 统计后回写 posts
  *   - 只有 whitelist 里的 info_hash + 有效 passkey 才能 announce
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
 import { getUserByPasskey } from "@/lib/passkey";
-import { query } from "@/lib/db";
+import { ensureSchema, query } from "@/lib/db";
 
-// ===== 内存 peer 存储 =====
-// key = info_hash, value = Map<peerKey, { ip, port, lastSeen, left }>
-// peerKey = email + "|" + peer_id（同一用户可能有多个客户端）
-interface PeerEntry {
-  ip: string;
-  port: number;
-  left: number; // 剩余字节，0 = seed
-  lastSeen: number; // ts
-  peerId: string;
-  email: string;
-}
-
-// Next.js 默认 edge runtime — 但我们依赖全局内存 peerStore + setInterval + fire-and-forget DB 写
-// edge runtime 在 response 返回后会冻结进程，fire-and-forget 的异步任务会被掐
 export const runtime = "nodejs";
 
-export const peerStore = new Map<string, Map<string, PeerEntry>>();
+// peer 掉线判定：15 分钟无 announce
+const PEER_TTL_SQL = "INTERVAL '15 minutes'";
 
-// 已计入 download_count 的 (user_email, info_hash) 对 — 防止同一用户同一种子重复 +1
-// （seeder 每次心跳 left=0 都要 announce，不能每次都加）
-export const downloadedPairs = new Set<string>();
-function pairKey(email: string, infoHash: string) {
-  return `${email}|${infoHash}`;
-}
-
-// 每分钟清理过期 peers（15 分钟没 announce = 掉线）
-const EXPIRY_MS = 15 * 60 * 1000;
-setInterval(() => {
-  const now = Date.now();
-  for (const peers of peerStore.values()) {
-    for (const [k, v] of peers) {
-      if (now - v.lastSeen > EXPIRY_MS) peers.delete(k);
-    }
-  }
-}, 60_000).unref?.();
-
-function getCompactPeers(peers: Map<string, PeerEntry>, count: number): Buffer {
-  // compact 格式: 每 peer 6 字节 — 4 IPv4 + 2 port (big-endian)
-  // 过滤掉自己（客户端实现自己排除）
-  const out: number[] = [];
-  let i = 0;
-  for (const p of peers.values()) {
-    if (i >= count) break;
-    const oct = p.ip.split(".");
-    if (oct.length !== 4) continue; // 暂只支持 IPv4
-    for (const o of oct) out.push(parseInt(o, 10));
-    out.push((p.port >> 8) & 0xff, p.port & 0xff);
-    i++;
-  }
-  return Buffer.from(out);
-}
-
-function getPeerStats(infoHash: string): { complete: number; incomplete: number } {
-  const peers = peerStore.get(infoHash);
-  if (!peers) return { complete: 0, incomplete: 0 };
-  let complete = 0;
-  let incomplete = 0;
-  for (const p of peers.values()) {
-    if (p.left === 0) complete++;
-    else incomplete++;
-  }
-  return { complete, incomplete };
+// tracker 可能在站点页面被访问前就先收到 announce，这里惰性确保表存在（每个实例只跑一次）
+let trackerSchemaReady = false;
+async function ensureTrackerSchema() {
+  if (trackerSchemaReady) return;
+  await ensureSchema();
+  trackerSchemaReady = true;
 }
 
 /* ===== Bencode 简单输出（只支持 tracker 响应用到的类型） ===== */
@@ -119,8 +69,16 @@ function errorResponse(msg: string): Uint8Array<ArrayBuffer> {
   );
 }
 
-function peerKey(email: string, peerId: string): string {
-  return `${email}|${peerId}`;
+/** compact peer 列表：每 peer 6 字节 — 4 IPv4 + 2 port (big-endian) */
+function getCompactPeers(peers: { ip: string; port: number }[]): Buffer {
+  const out: number[] = [];
+  for (const p of peers) {
+    const oct = p.ip.split(".");
+    if (oct.length !== 4) continue; // 暂只支持 IPv4
+    for (const o of oct) out.push(parseInt(o, 10));
+    out.push((p.port >> 8) & 0xff, p.port & 0xff);
+  }
+  return Buffer.from(out);
 }
 
 export async function GET(req: NextRequest) {
@@ -187,106 +145,108 @@ export async function GET(req: NextRequest) {
   const fwd = req.headers.get("x-forwarded-for");
   const ip = (fwd ? fwd.split(",")[0].trim() : req.nextUrl.hostname) || "127.0.0.1";
 
-  // --- 更新内存 store ---
-  let peers = peerStore.get(infoHashHex);
-  if (!peers) {
-    peers = new Map();
-    peerStore.set(infoHashHex, peers);
-  }
+  // --- 更新 peer 表 ---
+  await ensureTrackerSchema();
+  const peerKey = `${email}|${peerId}`;
 
-  const key = peerKey(email, peerId);
-  const existing = peers.get(key);
+  // 清理过期 peer（全局，last_seen 有索引，表规模很小）与读取上一次状态并行
+  const [, prevRows] = await Promise.all([
+    query(`DELETE FROM public.torrent_peers WHERE last_seen < NOW() - ${PEER_TTL_SQL}`),
+    query<{ left_bytes: string }>(
+      "SELECT left_bytes FROM public.torrent_peers WHERE info_hash = $1 AND peer_key = $2",
+      [infoHashHex, peerKey],
+    ),
+  ]);
+  const prevLeft = prevRows.length ? Number(prevRows[0].left_bytes) : null;
 
   if (event === "stopped") {
-    peers.delete(key);
+    await query(
+      "DELETE FROM public.torrent_peers WHERE info_hash = $1 AND peer_key = $2",
+      [infoHashHex, peerKey],
+    );
   } else {
-    const now = Date.now();
-    peers.set(key, {
-      ip,
-      port,
-      left,
-      peerId,
-      email,
-      lastSeen: now,
-    });
-
-    // 下载完成检测：之前 left > 0（在下载），现在 left = 0（做种）
-    // 不依赖 BT 客户端发 event=completed — 很多客户端静默变成 seed，不发事件
-    if (existing && existing.left > 0 && left === 0) {
-      peers.set(key, {
-        ip,
-        port,
-        left,
-        peerId,
-        email,
-        lastSeen: now + 1, // 标记需要 +1 download_count（用 +1 时间戳）
-      });
-    }
+    await query(
+      `INSERT INTO public.torrent_peers (info_hash, peer_key, user_email, ip, port, left_bytes, last_seen)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (info_hash, peer_key) DO UPDATE SET
+         ip         = EXCLUDED.ip,
+         port       = EXCLUDED.port,
+         left_bytes = EXCLUDED.left_bytes,
+         last_seen  = NOW()`,
+      [infoHashHex, peerKey, email, ip, port, left],
+    );
   }
 
-  // --- 异步写 PG 统计（不阻塞响应）---
-  void (async () => {
-    try {
-      // stopped 事件：peer 已从内存删了，需要刷新 DB seed/leech 计数
-      // 但不要写 user_torrent_stats（stopped 不是正常心跳）
-      if (event === "stopped") {
-        const stats = getPeerStats(infoHashHex);
-        await query(
-          `UPDATE public.posts SET seed_count = $1, leech_count = $2
-           WHERE id = (SELECT post_id FROM public.torrent_whitelist WHERE info_hash = $3)`,
-          [stats.complete, stats.incomplete, infoHashHex],
+  // --- 统计当前种子的 seed / leech + 拉取其他 peer（并行） ---
+  const [statsRows, peerRows] = await Promise.all([
+    query<{ complete: number; incomplete: number }>(
+      `SELECT COUNT(*) FILTER (WHERE left_bytes = 0)::int AS complete,
+              COUNT(*) FILTER (WHERE left_bytes > 0)::int AS incomplete
+         FROM public.torrent_peers
+        WHERE info_hash = $1`,
+      [infoHashHex],
+    ),
+    query<{ ip: string; port: number }>(
+      `SELECT ip, port FROM public.torrent_peers
+        WHERE info_hash = $1 AND peer_key <> $2
+        ORDER BY last_seen DESC
+        LIMIT 50`,
+      [infoHashHex, peerKey],
+    ),
+  ]);
+  const stats = statsRows[0] ?? { complete: 0, incomplete: 0 };
+
+  const isSeeding = left === 0;
+
+  // --- 回写 posts 计数 + 用户统计（stopped 事件不写统计） ---
+  const postsUpdate = query(
+    `UPDATE public.posts SET seed_count = $1, leech_count = $2
+      WHERE id = (SELECT post_id FROM public.torrent_whitelist WHERE info_hash = $3)
+        AND (seed_count IS DISTINCT FROM $1 OR leech_count IS DISTINCT FROM $2)`,
+    [stats.complete, stats.incomplete, infoHashHex],
+  );
+
+  const statsWrite =
+    event === "stopped"
+      ? null
+      : query(
+          `INSERT INTO public.user_torrent_stats
+             (user_email, info_hash, uploaded, downloaded, is_seeding, is_leeching, last_announce)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())
+           ON CONFLICT (user_email, info_hash) DO UPDATE SET
+             uploaded      = GREATEST(public.user_torrent_stats.uploaded, EXCLUDED.uploaded),
+             downloaded    = GREATEST(public.user_torrent_stats.downloaded, EXCLUDED.downloaded),
+             is_seeding    = EXCLUDED.is_seeding,
+             is_leeching   = EXCLUDED.is_leeching,
+             last_announce = NOW()`,
+          [email, infoHashHex, uploaded, downloaded, isSeeding, left > 0],
         );
-        revalidatePath("/");
-        return;
-      }
 
-      const isSeeding = left === 0;
-      const isLeeching = left > 0;
-      // 查上一次状态 — 判断是否刚完成下载
-      let justCompleted = false;
-      if (existing && existing.left > 0 && left === 0) justCompleted = true;
+  await Promise.all([postsUpdate, statsWrite]);
 
-      await query(
-        `INSERT INTO public.user_torrent_stats
-           (user_email, info_hash, uploaded, downloaded, is_seeding, is_leeching, last_announce)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-         ON CONFLICT (user_email, info_hash) DO UPDATE
-           SET uploaded     = public.user_torrent_stats.uploaded    + (EXCLUDED.uploaded    - public.user_torrent_stats.uploaded),
-               downloaded   = public.user_torrent_stats.downloaded  + (EXCLUDED.downloaded  - public.user_torrent_stats.downloaded),
-               is_seeding   = EXCLUDED.is_seeding,
-               is_leeching  = EXCLUDED.is_leeching,
-               last_announce = NOW()`,
-        [email, infoHashHex, uploaded, downloaded, isSeeding, isLeeching],
+  // --- 下载完成 +1 ---
+  // 触发条件：BT 客户端发 event=completed，或 peer 从 leech(left>0) 变成 seed(left=0)
+  // 同一用户同一种子只计一次：靠 user_torrent_stats.completed_at 去重
+  if (event !== "stopped") {
+    const justCompleted = prevLeft !== null && prevLeft > 0 && left === 0;
+    if (event === "completed" || justCompleted) {
+      const marked = await query(
+        `UPDATE public.user_torrent_stats SET completed_at = NOW()
+          WHERE user_email = $1 AND info_hash = $2 AND completed_at IS NULL
+          RETURNING 1`,
+        [email, infoHashHex],
       );
-      // 更新 posts 的 seed/leech count（从内存 peerStore 实时统计）
-      const stats = getPeerStats(infoHashHex);
-      await query(
-        `UPDATE public.posts SET seed_count = $1, leech_count = $2
-         WHERE id = (SELECT post_id FROM public.torrent_whitelist WHERE info_hash = $3)`,
-        [stats.complete, stats.incomplete, infoHashHex],
-      );
-
-      // 下载完成 +1 — 同一用户同一种子只计一次
-      // 触发条件：BT 客户端发 event=completed，或 peer 从 leech(left>0) 变成 seed(left=0)
-      if (
-        (event === "completed" || justCompleted) &&
-        !downloadedPairs.has(pairKey(email, infoHashHex))
-      ) {
-        downloadedPairs.add(pairKey(email, infoHashHex));
+      if (marked.length > 0) {
         await query(
           `UPDATE public.posts SET download_count = download_count + 1
-           WHERE id = (SELECT post_id FROM public.torrent_whitelist WHERE info_hash = $1)`,
+            WHERE id = (SELECT post_id FROM public.torrent_whitelist WHERE info_hash = $1)`,
           [infoHashHex],
         );
       }
-      revalidatePath("/");
-    } catch (e) {
-      console.error("[tracker] stats write failed:", e);
     }
-  })();
+  }
 
   // --- 构造响应 ---
-  const stats = getPeerStats(infoHashHex);
   const interval = 300; // 5 分钟
 
   const response: Record<string, Buffer> = {
@@ -298,7 +258,7 @@ export async function GET(req: NextRequest) {
 
   if (compact === 1) {
     // compact peer 是原始字节，不能走 string 路径
-    response["peers"] = bencodeRawBytes(getCompactPeers(peers, 200));
+    response["peers"] = bencodeRawBytes(getCompactPeers(peerRows));
   } else {
     // 非 compact — BEP-3 字典列表（略，tracker 客户端基本都用 compact=1）
     response["peers"] = bencodeString("");

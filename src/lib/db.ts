@@ -342,6 +342,21 @@ export async function ensureSchema(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS uds_email_idx ON public.user_torrent_stats(user_email);
     CREATE INDEX IF NOT EXISTS uds_hash_idx  ON public.user_torrent_stats(info_hash);
+    -- 下载完成标记：用于 download_count 去重（原先存在进程内存 Set，重启即丢）
+    ALTER TABLE public.user_torrent_stats ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+
+    -- 活跃 peer（原先存在进程内存 Map，无状态部署下会丢，这里落库共享）
+    CREATE TABLE IF NOT EXISTS public.torrent_peers (
+      info_hash    TEXT NOT NULL REFERENCES public.torrent_whitelist(info_hash) ON DELETE CASCADE,
+      peer_key     TEXT NOT NULL,                                       -- email|peer_id，同一用户可有多个客户端
+      user_email   TEXT NOT NULL,
+      ip           TEXT NOT NULL,
+      port         INTEGER NOT NULL,
+      left_bytes   BIGINT NOT NULL DEFAULT 0,                           -- 剩余字节，0 = seed
+      last_seen    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (info_hash, peer_key)
+    );
+    CREATE INDEX IF NOT EXISTS torrent_peers_seen_idx ON public.torrent_peers (last_seen);
 
     -- 帖子收藏
     CREATE TABLE IF NOT EXISTS public.post_favorites (
@@ -424,5 +439,15 @@ export async function ensureSchema(): Promise<void> {
       fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (media_type, tmdb_id)
     );
+
+    -- ====== R2 存储用量（防止超过免费额度） ======
+
+    -- 单行计数器：累计已上传字节数
+    CREATE TABLE IF NOT EXISTS public.r2_usage (
+      id           SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      total_bytes  BIGINT NOT NULL DEFAULT 0,
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    INSERT INTO public.r2_usage (id) VALUES (1) ON CONFLICT DO NOTHING;
   `);
 }

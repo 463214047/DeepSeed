@@ -5,7 +5,8 @@
  * FormData: file
  * 返回: { ok: true, url: "/uploads/covers/xxx.jpg" }
  *
- * 文件直接写到 public/uploads/{kind}/ 下，返回可公开访问的 URL。
+ * 已配置 R2 时上传到 Cloudflare R2，返回公共 URL；
+ * 未配置时仅在本地开发写入 public/uploads/{kind}/。
  */
 
 import { NextResponse } from "next/server";
@@ -13,6 +14,8 @@ import { auth } from "@/auth";
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { isR2Configured, putObject } from "@/lib/r2";
+import { reserveBytes, releaseBytes } from "@/lib/r2-usage";
 
 const ALLOWED = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -76,6 +79,39 @@ export async function POST(req: Request) {
     const bytes = Buffer.from(await file.arrayBuffer());
     const ext = extFromMime(file.type);
     const filename = `${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`;
+
+    // 优先上传到 Cloudflare R2（线上无持久磁盘）
+    if (isR2Configured()) {
+      // 免费额度守卫：先预占字节数，超过阈值直接拒绝
+      const reserved = await reserveBytes(file.size);
+      if (reserved === null) {
+        return NextResponse.json(
+          { ok: false, message: "存储空间已满，暂停上传" },
+          { status: 413 },
+        );
+      }
+
+      try {
+        const url = await putObject(`uploads/${subDir}/${filename}`, bytes, file.type);
+        return NextResponse.json({
+          ok: true,
+          url,
+          filename,
+          size: file.size,
+          mime: file.type,
+        });
+      } catch (err) {
+        // 上传失败，回退预占的额度
+        await releaseBytes(file.size).catch(() => {});
+        throw err;
+      }
+    }
+
+    // 未配置 R2：线上直接报错，本地开发沿用写 public/uploads 的方式
+    if (process.env.NODE_ENV === "production") {
+      console.error("[upload] 未配置 R2 环境变量，无法持久化文件");
+      return NextResponse.json({ ok: false, message: "文件存储未配置" }, { status: 500 });
+    }
 
     // 写 public/uploads/{kind}/ 目录
     const uploadDir = path.join(process.cwd(), "public", "uploads", subDir);

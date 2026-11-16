@@ -19,7 +19,7 @@ export const THEMES = [
   {
     id: "violet",
     label: "紫罗兰",
-    description: "默认 · 冷静、克制",
+    description: "冷静、克制",
     swatch: "from-violet-500 to-violet-700",
     colors: {
       "50": "#f5f3ff",
@@ -38,7 +38,7 @@ export const THEMES = [
   {
     id: "blue",
     label: "海洋蓝",
-    description: "清晰、可靠",
+    description: "默认 · 清晰、可靠",
     swatch: "from-blue-500 to-blue-700",
     colors: {
       "50": "#eff6ff",
@@ -134,10 +134,14 @@ export const THEMES = [
 
 export type ThemeId = (typeof THEMES)[number]["id"];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "blue";
 
 export function getTheme(id?: string | null): (typeof THEMES)[number] {
-  return THEMES.find((theme) => theme.id === id) ?? THEMES[0];
+  return (
+    THEMES.find((theme) => theme.id === id) ??
+    THEMES.find((theme) => theme.id === DEFAULT_THEME) ??
+    THEMES[0]
+  );
 }
 
 export function themeStyle(theme: Pick<Theme, "colors">): CSSProperties {

@@ -4,7 +4,6 @@ out
 build
 coverage
 public/uploads
-tracker/*.exe
 pnpm-lock.yaml
 tsconfig.tsbuildinfo
 next-env.d.ts

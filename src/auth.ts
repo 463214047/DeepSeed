@@ -139,6 +139,9 @@ export const { handlers, auth } = NextAuth({
      * 场景 2：已有 credentials 账号（同 email）→ 自动关联 oauth_accounts（支持后续 GitHub 快捷登录）
      */
     async signIn({ user, account, profile }) {
+      // 首次 GitHub 登录（自动建号）→ 引导去设置登录密码
+      let isNewUser = false;
+
       if (account?.provider === "github") {
         await ensureSchemaLazy();
 
@@ -165,6 +168,7 @@ export const { handlers, auth } = NextAuth({
 
           if (existing.length === 0) {
             // 新建本地账号（password_hash = NULL，表示只能通过 GitHub 登录）
+            isNewUser = true;
             await query(
               `INSERT INTO public.account_users (email, name, avatar_url)
                VALUES ($1, $2, $3)`,
@@ -204,7 +208,8 @@ export const { handlers, auth } = NextAuth({
         }
       }
 
-      return true;
+      // 首次 GitHub 登录（新建账号）：授权完成后直接进入设置登录密码页面
+      return isNewUser ? "/reset-password" : true;
     },
     async jwt({ token, user, account }) {
       if (user) {
