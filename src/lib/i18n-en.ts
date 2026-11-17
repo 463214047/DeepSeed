@@ -566,6 +566,8 @@ export const EN_MESSAGES: Record<string, string> = {
   "重置成功，即将跳转…": "Reset successful. Redirecting…",
   重置密码: "Reset password",
   "重置密码 - DeepSeed": "Reset password - DeepSeed",
+  "设置密码 - DeepSeed": "Set password - DeepSeed",
+  "设置失败，请稍后重试": "Failed to set password. Please try again later.",
   "重置失败，请稍后重试": "Reset failed. Please try again later.",
   "重置中…": "Resetting…",
   重做: "Redo",

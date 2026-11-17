@@ -342,6 +342,8 @@ export default function Editor({
                 text: title,
                 marks: [{ type: "link", attrs: { href } }],
               })
+              // 插入后清掉光标处继承的 link mark，否则工具栏「链接」按钮会一直高亮
+              .unsetMark("link")
               .run();
           }}
         />

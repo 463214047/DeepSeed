@@ -15,7 +15,10 @@ export default function LoginForm() {
   const [showTotp, setShowTotp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [totp, setTotp] = useState("");
+  // 6 位验证码按格存储，逐格输入/删除，提交时拼成完整字符串
+  const [totpDigits, setTotpDigits] = useState<string[]>(() => Array(6).fill(""));
+  const totp = totpDigits.join("");
+  const totpComplete = totpDigits.every((d) => d !== "");
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -26,7 +29,7 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loadingMsg, setLoadingMsg] = useState<string | null>(null);
-  const totpInputRef = useRef<HTMLInputElement | null>(null);
+  const totpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // 计算当前要显示的副标题状态文案
   // 优先级：loading > 错误 > 成功 > 默认引导文案
@@ -37,7 +40,7 @@ export default function LoginForm() {
 
   useEffect(() => {
     if (showTotp) {
-      setTimeout(() => totpInputRef.current?.focus(), 150);
+      setTimeout(() => totpRefs.current[0]?.focus(), 150);
     }
   }, [showTotp]);
 
@@ -112,6 +115,8 @@ export default function LoginForm() {
 
   async function handleTotpSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // 验证码未填满时不提交（此时主按钮为「返回」）
+    if (!totpComplete) return;
     setError(null);
     setSuccessMsg(null);
     setLoadingMsg("验证中…");
@@ -133,6 +138,9 @@ export default function LoginForm() {
             ? (AUTH_ERROR_MESSAGES[code] ?? "验证失败，请重新输入")
             : (NEXTAUTH_ERROR_FALLBACK[result.error] ?? "登录失败，请稍后重试");
         setError(msg);
+        // 验证码错误后清空并回到第一格，方便直接重输
+        setTotpDigits(Array(6).fill(""));
+        totpRefs.current[0]?.focus();
         setLoadingMsg(null);
         setCredentialLoading(false);
         return;
@@ -145,14 +153,71 @@ export default function LoginForm() {
     } catch (err) {
       console.error("[login] TOTP 验证异常:", err);
       setError("网络异常，请稍后重试");
+      setTotpDigits(Array(6).fill(""));
+      totpRefs.current[0]?.focus();
       setLoadingMsg(null);
       setCredentialLoading(false);
     }
   }
 
-  const handleTotpChange = (val: string) => {
-    const cleaned = val.replace(/\D/g, "").slice(0, 6);
-    setTotp(cleaned);
+  /** 把数字从 index 开始逐格填入，并移动焦点 */
+  const fillTotpDigits = (index: number, digits: string) => {
+    setTotpDigits((prev) => {
+      const next = [...prev];
+      let pos = index;
+      for (const d of digits) {
+        if (pos >= 6) break;
+        next[pos] = d;
+        pos += 1;
+      }
+      return next;
+    });
+    totpRefs.current[Math.min(index + digits.length, 5)]?.focus();
+  };
+
+  const handleTotpDigitChange = (index: number, value: string) => {
+    setError(null);
+    const digits = value.replace(/\D/g, "");
+    if (!digits) {
+      // 输入了非数字：强制重渲清掉非法字符
+      setTotpDigits((prev) => [...prev]);
+      return;
+    }
+    fillTotpDigits(index, digits);
+  };
+
+  const handleTotpDigitKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      setError(null);
+      if (totpDigits[index]) {
+        // 当前格有值 → 清空
+        setTotpDigits((prev) => prev.map((d, i) => (i === index ? "" : d)));
+      } else if (index > 0) {
+        // 当前格为空 → 回退清空上一格
+        setTotpDigits((prev) => prev.map((d, i) => (i === index - 1 ? "" : d)));
+        totpRefs.current[index - 1]?.focus();
+      }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      totpRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      totpRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleTotpDigitPaste = (index: number, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const digits = e.clipboardData.getData("text").replace(/\D/g, "");
+    if (!digits) return;
+    e.preventDefault();
+    setError(null);
+    fillTotpDigits(index, digits);
+  };
+
+  const handleExitTotp = () => {
+    setShowTotp(false);
+    setTotpDigits(Array(6).fill(""));
     setError(null);
   };
 
@@ -325,7 +390,7 @@ export default function LoginForm() {
                 </div>
               </div>
 
-              {/* 记住我 + 重置密码 */}
+              {/* 记住我 + 忘记密码 */}
               <div className="flex items-center justify-between text-xs">
                 <label className="flex cursor-pointer select-none items-center gap-2 text-slate-600">
                   <input
@@ -380,49 +445,47 @@ export default function LoginForm() {
                   二次验证
                 </div>
 
-                {/* TOTP 输入框 */}
-                <div className="space-y-1">
-                  <label htmlFor="totp-input" className="sr-only">
-                    6位验证码
-                  </label>
-                  <input
-                    ref={totpInputRef}
-                    id="totp-input"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]{6}"
-                    maxLength={6}
-                    value={totp}
-                    onChange={(e) => handleTotpChange(e.target.value)}
-                    tabIndex={showTotp ? 0 : -1}
-                    aria-invalid={!!error && showTotp}
-                    className="h-14 w-full rounded-xl border border-slate-200 bg-white text-center text-2xl font-bold tracking-[0.5em] text-slate-900 outline-none transition placeholder:tracking-normal placeholder:text-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                  />
+                {/* TOTP 输入框：6 个独立方格 */}
+                <div className="flex justify-between gap-2" role="group" aria-label="6位验证码">
+                  {totpDigits.map((digit, i) => (
+                    <input
+                      key={i}
+                      ref={(el) => {
+                        totpRefs.current[i] = el;
+                      }}
+                      id={`totp-input-${i}`}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete={i === 0 ? "one-time-code" : "off"}
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleTotpDigitChange(i, e.target.value)}
+                      onKeyDown={(e) => handleTotpDigitKeyDown(i, e)}
+                      onPaste={(e) => handleTotpDigitPaste(i, e)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      tabIndex={showTotp ? 0 : -1}
+                      aria-label={`验证码第 ${i + 1} 位`}
+                      className={`h-14 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white text-center text-2xl font-bold text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 ${showTotp ? "" : "pointer-events-none"}`}
+                    />
+                  ))}
                 </div>
-
-                {/* 返回按钮 */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowTotp(false);
-                    setTotp("");
-                    setError(null);
-                  }}
-                  className="text-xs text-slate-500 transition hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:rounded"
-                >
-                  ← 修改账号密码
-                </button>
               </div>
             </div>
           </div>
 
-          {/* 主操作按钮 */}
+          {/* 主操作按钮：验证码未填满时兼作「返回」（阻止默认提交，避免返回后又被自动登录） */}
           <Button
             type="submit"
-            disabled={isAnyLoading || (showTotp && totp.length !== 6)}
+            onClick={(e) => {
+              if (showTotp && !totpComplete) {
+                e.preventDefault();
+                handleExitTotp();
+              }
+            }}
+            disabled={isAnyLoading}
             className="disabled-primary h-[48px] w-full rounded-[14px] bg-brand-600 text-[15px] font-bold text-white shadow-lg shadow-brand-600/20 transition hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-xl hover:shadow-brand-600/30 disabled:translate-y-0"
           >
-            登录
+            {showTotp && !totpComplete ? "返回" : "登录"}
           </Button>
         </form>
 

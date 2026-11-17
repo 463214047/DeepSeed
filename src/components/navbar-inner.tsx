@@ -52,7 +52,7 @@ export default function NavbarInner({ loggedIn, userImage, userName, myUid, unre
     };
   }, [loggedIn]);
 
-  // 未登录时不显示顶部导航栏；登录、注册、重置密码页也不显示
+  // 未登录时不显示顶部导航栏；登录、注册、设置密码页也不显示
   if (
     !loggedIn ||
     pathname.startsWith("/login") ||

@@ -4,7 +4,7 @@ import { AuthShell } from "@/components/auth-shell";
 import ResetPasswordClient from "./ResetPasswordClient";
 
 export const metadata: Metadata = {
-  title: "重置密码 ",
+  title: "设置密码 ",
 };
 
 export default async function ResetPasswordPage() {

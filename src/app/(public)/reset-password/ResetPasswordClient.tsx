@@ -45,7 +45,7 @@ export default function ResetPasswordClient({ email }: { email: string | null })
         message?: string;
       } | null;
       if (!res.ok || !data?.ok) {
-        setError(data?.message ?? "重置失败，请稍后重试");
+        setError(data?.message ?? "设置失败，请稍后重试");
         setBusy(false);
         return;
       }
@@ -60,7 +60,7 @@ export default function ResetPasswordClient({ email }: { email: string | null })
   return (
     <Card className="relative z-10 w-full max-w-[420px] gap-0 overflow-hidden rounded-[28px] border border-slate-900/[0.08] bg-white/80 py-0 shadow-[0_24px_60px_rgba(15,23,42,0.08),0_2px_8px_rgba(15,23,42,0.04),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl">
       <CardContent className="flex flex-col items-center px-8 pb-8 pt-9">
-        <h1 className="mb-1 text-[24px] font-bold tracking-[-0.03em] text-[#0b1220]">重置密码</h1>
+        <h1 className="mb-1 text-[24px] font-bold tracking-[-0.03em] text-[#0b1220]">设置密码</h1>
 
         <p
           className={`mb-6 min-h-[20px] text-center text-sm ${
