@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Check, ChevronDown, Save, Send, ShieldAlert, ShieldCheck } from "lucide-react";
-import Editor from "@/components/editor";
+import Editor from "@/components/editor-lazy";
 import { parseTorrentTotalSize } from "@/lib/bencode";
 import { extractTmdbRef } from "@/lib/tmdb-link";
 import { parseExternalLinks, type ExternalLink } from "@/lib/external-links";

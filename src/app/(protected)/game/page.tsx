@@ -11,7 +11,7 @@ export default async function GamesPage() {
   const session = await auth();
   const email = session?.user?.email;
 
-  let magic = 16000;
+  let magic = 0;
   let pity5 = 0;
   let pity4 = 0;
   let total = 0;
@@ -34,7 +34,7 @@ export default async function GamesPage() {
     );
     if (users.length > 0) {
       const u = users[0];
-      magic = Number(u.wish_magic) || 16000;
+      magic = Number(u.wish_magic) || 0;
       pity5 = Number(u.wish_pity5) || 0;
       pity4 = Number(u.wish_pity4) || 0;
       total = Number(u.wish_total) || 0;

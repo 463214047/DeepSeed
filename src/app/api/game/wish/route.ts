@@ -13,7 +13,7 @@ type WishSave = {
 };
 
 const DEFAULT_SAVE: WishSave = {
-  magic: 16000,
+  magic: 0,
   pity5: 0,
   pity4: 0,
   total: 0,

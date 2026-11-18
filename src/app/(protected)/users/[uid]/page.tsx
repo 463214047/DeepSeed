@@ -43,7 +43,7 @@ const loadUser = cache(async (uid: number) => {
     `SELECT uid, email, name, avatar_url,
             COALESCE(role, 'user') AS role,
             created_at,
-            COALESCE(wish_magic, 16000) AS wish_magic,
+            COALESCE(wish_magic, 0) AS wish_magic,
             COALESCE(seed_points, 0) AS seed_points,
             rainbow_enabled, rainbow_until
      FROM public.account_users WHERE uid = $1 LIMIT 1`,

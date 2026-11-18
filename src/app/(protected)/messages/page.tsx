@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { UserName } from "@/components/rainbow-name";
-import Editor from "@/components/editor";
+import { CompactEditor } from "@/components/editor-lazy";
 import { isRichText, richTextToPlainText, sanitizeRichHtml } from "@/lib/rich-text";
 
 type TabKey = "notifications" | "inbox" | "outbox";
@@ -782,7 +782,7 @@ function InboxDetailDialog({
         </div>
 
         <div className="border-t border-slate-100 px-5 py-4 sm:px-6">
-          <Editor
+          <CompactEditor
             key={replyKey}
             content={reply}
             onChange={setReply}

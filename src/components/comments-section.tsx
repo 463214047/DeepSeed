@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageSquare } from "lucide-react";
-import Editor from "@/components/editor";
+import { CompactEditor } from "@/components/editor-lazy";
 import { UserName } from "@/components/rainbow-name";
 
 type Comment = {
@@ -248,7 +248,7 @@ export default function CommentsSection({ postId }: Props) {
 
         {/* 富文本编辑器（与发布页「介绍」同款，紧凑尺寸） */}
         <div className="rounded-xl border border-slate-200 overflow-hidden focus-within:border-slate-400 focus-within:ring-4 focus-within:ring-slate-900/5 transition">
-          <Editor
+          <CompactEditor
             key={editorKey}
             content=""
             onChange={setContentHtml}

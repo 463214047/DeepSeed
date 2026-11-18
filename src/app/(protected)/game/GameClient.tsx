@@ -462,7 +462,7 @@ export default function GameClient(props: {
         </p>
         <p style="font-size:12.5px;color:#93a8c4">
           <b style="color:#ffd98a">奖励一览：</b><br>
-          ★★★★★　托尔、彩虹ID、魔力<br>
+          ★★★★★　贵宾、神秘奖品、魔力<br>
           ★★★★　彩虹ID、魔力<br>
           ★★★　魔力
         </p>`);
@@ -498,7 +498,7 @@ export default function GameClient(props: {
         const data = await res.json();
         if (!data.ok || !data.save) return false;
         const s = data.save;
-        magic = s.magic ?? 16000;
+        magic = s.magic ?? 0;
         gacha.pity5 = s.pity5 ?? 0;
         gacha.pity4 = s.pity4 ?? 0;
         gacha.total = s.total ?? 0;
@@ -910,7 +910,7 @@ export default function GameClient(props: {
                     <path d="M3.6 9.6h16.8" stroke="#fff" strokeWidth=".9" opacity=".45" />
                   </svg>
                 </div>
-                <b id="magicCount">16000</b>
+                <b id="magicCount">{props.initialMagic}</b>
               </button>
             </div>
           </div>

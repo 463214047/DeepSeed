@@ -108,7 +108,9 @@ export async function ensureSchema(): Promise<void> {
       ALTER TABLE public.account_users ALTER COLUMN password_hash DROP NOT NULL;
 
       -- 游戏：原神祈愿模拟器（魔力 + 保底 + 累计次数直接挂用户表，避免独立存档表的同步问题）
-      ALTER TABLE public.account_users ADD COLUMN IF NOT EXISTS wish_magic  INTEGER NOT NULL DEFAULT 16000;
+      ALTER TABLE public.account_users ADD COLUMN IF NOT EXISTS wish_magic  INTEGER NOT NULL DEFAULT 0;
+      -- 老库的列默认值仍是 16000，这里统一改成 0（只影响新用户，已有数据不动）
+      ALTER TABLE public.account_users ALTER COLUMN wish_magic SET DEFAULT 0;
       ALTER TABLE public.account_users ADD COLUMN IF NOT EXISTS wish_pity5 INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE public.account_users ADD COLUMN IF NOT EXISTS wish_pity4 INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE public.account_users ADD COLUMN IF NOT EXISTS wish_total  INTEGER NOT NULL DEFAULT 0;

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
-import Editor from "@/components/editor";
+import Editor from "@/components/editor-lazy";
 
 type TopicTag = "求助" | "邀请" | "分享" | "讨论" | "公告";
 
