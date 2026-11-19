@@ -4,21 +4,12 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Send, TriangleAlert } from "lucide-react";
+import EditorSkeleton from "@/components/editor-skeleton";
 
 // TipTap + ProseMirror 体积较大，按需异步加载，避免拖慢整页首屏
 const Editor = dynamic(() => import("@/components/editor"), {
   ssr: false,
-  loading: () => (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <div className="flex h-11 items-center gap-2 border-b border-slate-100 px-3">
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-      </div>
-      <div className="h-[300px] animate-pulse bg-slate-50/60" />
-    </div>
-  ),
+  loading: () => <EditorSkeleton compact contentClassName="h-[300px] overflow-y-auto" />,
 });
 
 export default function ContactForm() {

@@ -13,6 +13,7 @@ import { renderBBCode } from "@/lib/bbcode";
 import { useLocale } from "@/components/language-provider";
 import ImagePickerDialog from "@/components/image-picker-dialog";
 import LinkPickerDialog from "@/components/link-picker-dialog";
+import EditorSkeleton from "@/components/editor-skeleton";
 import { translateText } from "@/lib/i18n";
 
 /** 正文编辑区样式（默认尺寸，发布页 / 论坛用） */
@@ -154,7 +155,11 @@ export default function Editor({
     setLinkDialogOpen((open) => !open);
   }, []);
 
-  if (!editor) return null;
+  // 实例还没创建好时先渲染同尺寸骨架，
+  // 直接 return null 会让编辑区高度瞬间变 0，下方按钮会向上跳一下
+  if (!editor) {
+    return <EditorSkeleton compact={compact} contentClassName={contentClassName} />;
+  }
 
   // 工具栏何时可见：非折叠模式一直显示；折叠模式由按钮控制
   const showToolbar = !collapsibleToolbar || toolbarOpen;

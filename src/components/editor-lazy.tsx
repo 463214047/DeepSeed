@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import EditorSkeleton from "@/components/editor-skeleton";
 
 /**
  * TipTap + ProseMirror 体积较大，统一异步加载，
@@ -8,31 +9,12 @@ import dynamic from "next/dynamic";
  */
 const Editor = dynamic(() => import("@/components/editor"), {
   ssr: false,
-  loading: () => (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <div className="flex h-11 items-center gap-2 border-b border-slate-100 px-3">
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-      </div>
-      <div className="h-[400px] animate-pulse bg-slate-50/60" />
-    </div>
-  ),
+  loading: () => <EditorSkeleton />,
 });
 
 export const CompactEditor = dynamic(() => import("@/components/editor"), {
   ssr: false,
-  loading: () => (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <div className="flex h-10 items-center gap-2 border-b border-slate-100 px-3">
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-        <span className="size-6 animate-pulse rounded bg-slate-100" />
-      </div>
-      <div className="h-[140px] animate-pulse bg-slate-50/60" />
-    </div>
-  ),
+  loading: () => <EditorSkeleton compact />,
 });
 
 export default Editor;

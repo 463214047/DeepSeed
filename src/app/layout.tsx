@@ -5,6 +5,7 @@ import Navbar from "@/components/navbar";
 import { LanguageProvider } from "@/components/language-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import WallpaperBackground from "@/components/wallpaper-background";
+import RouteProgress from "@/components/route-progress";
 import { BACKGROUND_COOKIE, backgroundStyle, getBackground } from "@/lib/backgrounds";
 import { LOCALE_COOKIE, getLocale } from "@/lib/i18n";
 import { THEME_COOKIE, getTheme, themeStyle } from "@/lib/themes";
@@ -37,6 +38,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       >
         <ThemeProvider initialTheme={theme.id} initialBackground={background.id}>
           <WallpaperBackground />
+          <RouteProgress />
           <LanguageProvider initialLocale={locale}>
             <Navbar />
             {children}
