@@ -13,8 +13,10 @@ import {
 } from "react";
 import {
   DEFAULT_LOCALE,
+  LANGUAGE_SWITCH_ENABLED,
   LOCALE_COOKIE,
   LOCALES,
+  loadLocaleData,
   translateDocumentTitle,
   translateText,
   type Locale,
@@ -184,14 +186,20 @@ export function LanguageProvider({
   initialLocale: Locale;
   children: ReactNode;
 }) {
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  // 语言切换被屏蔽时忽略已有 Cookie，固定使用简体中文
+  const [locale, setLocaleState] = useState<Locale>(
+    LANGUAGE_SWITCH_ENABLED ? initialLocale : DEFAULT_LOCALE,
+  );
   const localeRef = useRef(locale);
   const observerRef = useRef<MutationObserver | null>(null);
 
-  const apply = useCallback((next: Locale) => {
+  const apply = useCallback(async (next: Locale) => {
     const observer = observerRef.current;
     observer?.disconnect();
     try {
+      // 词典按需加载（简体中文不加载）；加载期间用户可能又切换了语言，以最新选择为准
+      await loadLocaleData(next);
+      if (localeRef.current !== next) return;
       document.documentElement.lang = next;
       document.documentElement.dataset.locale = next;
       translateSubtree(document.body, next);
@@ -204,17 +212,18 @@ export function LanguageProvider({
 
   const setLocale = useCallback(
     (next: Locale) => {
+      if (!LANGUAGE_SWITCH_ENABLED) return;
       document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
       localeRef.current = next;
       setLocaleState(next);
-      apply(next);
+      void apply(next);
     },
     [apply],
   );
 
   useIsomorphicLayoutEffect(() => {
     localeRef.current = locale;
-    apply(locale);
+    void apply(locale);
   }, [apply, locale]);
 
   useEffect(() => {

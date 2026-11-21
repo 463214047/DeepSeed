@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import AuthPreferences from "@/components/auth-preferences";
 
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
@@ -17,7 +16,6 @@ export function AuthShell({ children }: { children: ReactNode }) {
         className="pointer-events-none fixed left-[calc(50%-280px)] top-[calc(50%-280px)] size-[560px] rounded-full bg-[radial-gradient(circle,rgba(96,165,250,0.18),transparent_65%)] blur-2xl animate-[float_12s_ease-in-out_infinite_alternate]"
       />
       {children}
-      <AuthPreferences />
     </main>
   );
 }

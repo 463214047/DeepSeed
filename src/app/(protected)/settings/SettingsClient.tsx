@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useLocale } from "@/components/language-provider";
+import { LANGUAGE_SWITCH_ENABLED } from "@/lib/i18n";
 import { UserName } from "@/components/rainbow-name";
 import { useTheme } from "@/components/theme-provider";
 import {
@@ -71,7 +72,8 @@ export default function SettingsClient({ initialProfile }: { initialProfile: Set
       <div className="grid gap-6 min-[900px]:grid-cols-[220px_minmax(0,1fr)] min-[900px]:items-start">
         <nav aria-label="设置分类" className="min-[900px]:sticky min-[900px]:top-24">
           <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm shadow-slate-900/[0.03] min-[900px]:flex-col [[data-background=tohru]_&]:bg-transparent">
-            {TABS.map(({ key, label, icon: Icon }) => {
+            {(LANGUAGE_SWITCH_ENABLED ? TABS : TABS.filter((t) => t.key !== "language")).map(
+              ({ key, label, icon: Icon }) => {
               const active = tab === key;
               return (
                 <button
@@ -96,7 +98,7 @@ export default function SettingsClient({ initialProfile }: { initialProfile: Set
         <div className="min-w-0">
           {tab === "profile" && <ProfilePanel profile={initialProfile} />}
           {tab === "appearance" && <AppearancePanel />}
-          {tab === "language" && <LanguagePanel />}
+          {tab === "language" && LANGUAGE_SWITCH_ENABLED && <LanguagePanel />}
           {tab === "security" && <SecurityPanel />}
           {tab === "danger" && <DangerPanel />}
         </div>
@@ -790,15 +792,127 @@ function LanguagePanel() {
   );
 }
 
+function describeDevice(ua: string): string {
+  if (!ua) return "未知设备";
+  const os = /iPhone|iPad|iPod/i.test(ua)
+    ? "iOS"
+    : /Android/i.test(ua)
+      ? "Android"
+      : /Windows/i.test(ua)
+        ? "Windows"
+        : /Mac OS X|Macintosh/i.test(ua)
+          ? "macOS"
+          : /Linux/i.test(ua)
+            ? "Linux"
+            : "";
+  const browser = /Edg\//i.test(ua)
+    ? "Edge"
+    : /OPR\/|Opera/i.test(ua)
+      ? "Opera"
+      : /Firefox\//i.test(ua)
+        ? "Firefox"
+        : /Chrome\/|CriOS/i.test(ua)
+          ? "Chrome"
+          : /Safari\//i.test(ua)
+            ? "Safari"
+            : "";
+  return [os, browser].filter(Boolean).join(" · ") || "未知设备";
+}
+
+function describeTime(iso: string): string {
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return "";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  if (diff < 30 * 86_400_000) return `${Math.floor(diff / 86_400_000)} 天前`;
+  return new Date(ts).toLocaleDateString("zh-CN");
+}
+
+type DeviceSession = {
+  id: string;
+  userAgent: string;
+  ip: string;
+  createdAt: string;
+  lastSeenAt: string;
+  current: boolean;
+};
+
 function SecurityPanel() {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [sessions, setSessions] = useState<DeviceSession[] | null>(null);
+  const [sessionError, setSessionError] = useState("");
+  const [busyId, setBusyId] = useState("");
+
+  async function loadSessions() {
+    try {
+      const res = await fetch("/api/account/sessions", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.message || "加载失败");
+      setSessions(data.sessions ?? []);
+      setSessionError("");
+    } catch {
+      setSessionError("设备列表加载失败");
+      setSessions([]);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/account/sessions", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ok) {
+          setSessions(data.sessions ?? []);
+        } else {
+          setSessionError("设备列表加载失败");
+          setSessions([]);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSessionError("设备列表加载失败");
+        setSessions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleLogout() {
     setLoggingOut(true);
     await signOut({ redirect: false });
     router.push("/login");
     router.refresh();
+  }
+
+  async function revokeSession(s: DeviceSession) {
+    if (s.current) {
+      const ok = window.confirm("退出当前设备会立即回到登录页，确定继续吗？");
+      if (!ok) return;
+    }
+    setBusyId(s.id);
+    try {
+      const res = await fetch(`/api/account/sessions?id=${encodeURIComponent(s.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.message || "操作失败");
+      if (s.current) {
+        await signOut({ redirect: false });
+        router.push("/login");
+        router.refresh();
+        return;
+      }
+      setSessions((prev) => (prev ? prev.filter((x) => x.id !== s.id) : prev));
+    } catch {
+      setSessionError("下线失败，请稍后重试");
+    } finally {
+      setBusyId("");
+    }
   }
 
   return (
@@ -816,6 +930,73 @@ function SecurityPanel() {
           <Link href="/settings/security/two-factor" className={ACTION_BUTTON}>
             管理
           </Link>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">登录设备</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                以下设备当前保持着登录状态，可随时手动下线。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadSessions()}
+              className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 active:scale-[0.98]"
+            >
+              刷新
+            </button>
+          </div>
+
+          {sessionError && (
+            <p className="mt-4 text-sm text-red-600" role="status">
+              {sessionError}
+            </p>
+          )}
+
+          <ul className="mt-4 space-y-3">
+            {sessions === null && (
+              <li className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 text-sm text-slate-400">
+                加载中…
+              </li>
+            )}
+            {sessions !== null && sessions.length === 0 && (
+              <li className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 text-sm text-slate-400">
+                暂无登录设备记录（重新登录后会显示）
+              </li>
+            )}
+            {sessions?.map((s) => (
+              <li
+                key={s.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-slate-900">
+                      {describeDevice(s.userAgent)}
+                    </span>
+                    {s.current && (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600">
+                        当前设备
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 truncate text-xs text-slate-500">
+                    {s.ip || "未知 IP"} · 最近活跃 {describeTime(s.lastSeenAt)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void revokeSession(s)}
+                  disabled={busyId === s.id}
+                  className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-red-300 hover:text-red-600 active:scale-[0.98] disabled:opacity-60"
+                >
+                  {busyId === s.id ? "下线中…" : "下线"}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div className="flex items-center justify-between gap-4 p-5 sm:p-6">

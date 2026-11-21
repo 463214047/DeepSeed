@@ -1,4 +1,5 @@
 import NextAuth, { CredentialsSignin } from "next-auth";
+import { headers } from "next/headers";
 import GitHub from "next-auth/providers/github";
 import Credentials from "next-auth/providers/credentials";
 import { query, ensureSchema } from "@/lib/db";
@@ -129,7 +130,7 @@ export const { handlers, auth } = NextAuth({
   },
   session: {
     strategy: "jwt",
-    maxAge: 60 * 60 * 24, // 1 天默认
+    maxAge: 60 * 60 * 24 * 90, // 90 天，长期不用才失效
   },
   callbacks: {
     /**
@@ -211,7 +212,7 @@ export const { handlers, auth } = NextAuth({
       // 首次 GitHub 登录（新建账号）：授权完成后直接进入设置登录密码页面
       return isNewUser ? "/reset-password" : true;
     },
-    async jwt({ token, user, account }) {
+    async jwt({ token, user }) {
       if (user) {
         token.sub = user.id;
         token.email = user.email ?? token.email;
@@ -226,31 +227,61 @@ export const { handlers, auth } = NextAuth({
           });
         }
 
-        // remember me 控制 session 过期
-        if (
-          account?.provider === "credentials" &&
-          (account as unknown as { remember?: string }).remember === "true"
-        ) {
-          token.maxAge = 60 * 60 * 24 * 7; // 7 天
-        } else {
-          token.maxAge = 60 * 60 * 24;
+        // 登记本次登录会话：设置页可查看设备列表并手动下线
+        if (user.email) {
+          try {
+            const hdrs = await headers();
+            const ua = hdrs.get("user-agent") ?? "";
+            const fwd = hdrs.get("x-forwarded-for") ?? "";
+            const ip = fwd.split(",")[0].trim() || hdrs.get("x-real-ip") || "";
+            const rows = await query<{ id: string }>(
+              `INSERT INTO public.user_sessions (user_email, user_agent, ip)
+               VALUES ($1, $2, $3) RETURNING id`,
+              [user.email, ua.slice(0, 500), ip.slice(0, 100)],
+            );
+            token.sid = rows[0]?.id;
+          } catch (e) {
+            // 登记失败不影响登录本身
+            console.error("[auth] 会话登记失败:", e instanceof Error ? e.message : e);
+          }
         }
       } else {
         // 每次 token 被读取时，也从 DB 同步最新资料（确保头像/昵称/签名实时）
         try {
-          const rows = await query<{
+          type SessionRow = {
             name: string | null;
             avatar_url: string | null;
             signature: string | null;
-          }>(
-            `SELECT name, avatar_url, signature FROM public.account_users WHERE email = $1 LIMIT 1`,
-            [token.email],
-          );
-          if (rows[0]) {
-            token.name = rows[0].name ?? token.name;
-            token.image = rows[0].avatar_url ?? token.image;
-            token.signature = rows[0].signature ?? token.signature;
-          }
+            session_exists: boolean;
+          };
+          const rows: SessionRow[] =
+            typeof token.sid === "string"
+              ? // 校验会话是否仍存在；活跃时间最多每 5 分钟写一次，避免每个请求都写库
+                await query<SessionRow>(
+                  `WITH upd AS (
+                     UPDATE public.user_sessions SET last_seen_at = NOW()
+                      WHERE id = $1
+                        AND last_seen_at < NOW() - INTERVAL '5 minutes'
+                   )
+                   SELECT a.name, a.avatar_url, a.signature,
+                          EXISTS (
+                            SELECT 1 FROM public.user_sessions s WHERE s.id = $1
+                          ) AS session_exists
+                     FROM public.account_users a
+                    WHERE a.email = $2 LIMIT 1`,
+                  [token.sid, token.email],
+                )
+              : // 旧版本签发的 Token 没有会话 id：先放行，下次登录后会登记
+                await query<SessionRow>(
+                  `SELECT name, avatar_url, signature, TRUE AS session_exists
+                     FROM public.account_users WHERE email = $1 LIMIT 1`,
+                  [token.email],
+                );
+          if (!rows[0]) return token;
+          if (typeof token.sid === "string" && !rows[0].session_exists) return null;
+          token.name = rows[0].name ?? token.name;
+          token.image = rows[0].avatar_url ?? token.image;
+          token.signature = rows[0].signature ?? token.signature;
         } catch {
           // DB 查询失败就跳过，token 保持原值
         }
@@ -266,6 +297,9 @@ export const { handlers, auth } = NextAuth({
         session.user.image = (token.image as string | undefined) ?? undefined;
         (session.user as { signature?: string }).signature =
           (token.signature as string | undefined) ?? undefined;
+        // 会话 id：设置页用来标记“当前设备”
+        (session.user as { sessionId?: string }).sessionId =
+          typeof token.sid === "string" ? token.sid : undefined;
       }
       return session;
     },

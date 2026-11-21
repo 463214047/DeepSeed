@@ -186,6 +186,18 @@ export async function ensureSchema(): Promise<void> {
       PRIMARY KEY (conversation_id, user_email)
     );
 
+    -- 登录设备会话：设置页查看设备列表并手动下线（删除行 = 会话立即失效）
+    CREATE TABLE IF NOT EXISTS public.user_sessions (
+      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_email    TEXT NOT NULL REFERENCES public.account_users(email) ON DELETE CASCADE,
+      user_agent    TEXT,
+      ip            TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS user_sessions_email_idx
+      ON public.user_sessions (user_email, last_seen_at DESC);
+
     -- OAuth / SSO 账号绑定（GitHub 等）
     CREATE TABLE IF NOT EXISTS public.oauth_accounts (
       id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),

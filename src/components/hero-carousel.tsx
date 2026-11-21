@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 
 interface Slide {
@@ -35,6 +36,12 @@ const TRANSITION_MS = 550;
 export default function HeroCarousel() {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
+
+  // 联系管理页的编辑器是独立的异步 chunk（TipTap 约 130KB gzip），
+  // 页面渲染完才开始下载会明显延迟。悬停/聚焦时提前拉取，和路由跳转并行。
+  const preloadEditor = useCallback(() => {
+    void import("@/components/editor");
+  }, []);
 
   const go = useCallback((delta: number) => {
     setIdx((i) => (i + delta + SLIDES.length) % SLIDES.length);
@@ -94,18 +101,20 @@ export default function HeroCarousel() {
 
               {s.duoButtons ? (
                 <div className="mt-5 flex items-center gap-3">
-                  <a
+                  <Link
                     href="/rules"
                     className="rounded-full bg-white px-5 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-100 active:scale-95 [[data-background=tohru]_&]:border [[data-background=tohru]_&]:border-slate-400 [[data-background=tohru]_&]:bg-transparent!"
                   >
                     规则
-                  </a>
-                  <a
+                  </Link>
+                  <Link
                     href="/contact"
-                    className="rounded-full border border-white/30 px-5 py-2 text-sm font-medium text-white transition hover:bg-white/10 active:scale-95 [[data-background=tohru]_&]:border-slate-400 [[data-background=tohru]_&]:text-slate-900!"
+                    onMouseEnter={preloadEditor}
+                    onFocus={preloadEditor}
+                    className="rounded-full border border-white/30 px-5 py-2 text-sm font-medium text-white transition hover:bg-white/10 active:scale-95 [[data-background=tohru]_&]:border [[data-background=tohru]_&]:border-slate-400 [[data-background=tohru]_&]:text-slate-900!"
                   >
                     联系管理
-                  </a>
+                  </Link>
                 </div>
               ) : s.cta ? (
                 <a

@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AUTH_CODES, AUTH_ERROR_MESSAGES, NEXTAUTH_ERROR_FALLBACK } from "@/lib/auth-codes";
@@ -19,7 +18,6 @@ export default function LoginForm() {
   const [totpDigits, setTotpDigits] = useState<string[]>(() => Array(6).fill(""));
   const totp = totpDigits.join("");
   const totpComplete = totpDigits.every((d) => d !== "");
-  const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
 
   const [credentialLoading, setCredentialLoading] = useState(false);
@@ -72,7 +70,6 @@ export default function LoginForm() {
       const result = await signIn("credentials", {
         email: normalizedEmail,
         password,
-        remember: String(remember),
         redirect: false,
       });
 
@@ -127,7 +124,6 @@ export default function LoginForm() {
         email,
         password,
         totp,
-        remember: String(remember),
         redirect: false,
       });
 
@@ -390,17 +386,8 @@ export default function LoginForm() {
                 </div>
               </div>
 
-              {/* 记住我 + 忘记密码 */}
-              <div className="flex items-center justify-between text-xs">
-                <label className="flex cursor-pointer select-none items-center gap-2 text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={remember}
-                    onChange={(e) => setRemember(e.target.checked)}
-                    className="size-3.5 cursor-pointer rounded border-slate-300 accent-brand-600"
-                  />
-                  记住我
-                </label>
+              {/* 忘记密码 */}
+              <div className="flex items-center justify-end text-xs">
                 <button
                   type="button"
                   onClick={handleResetPasswordVerify}

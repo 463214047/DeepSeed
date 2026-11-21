@@ -42,12 +42,23 @@ export default function RouteProgress() {
     const finish = () => {
       clearTimers();
       activeRef.current = false;
-      // 直接补满再淡出
-      setWidth(100);
+      // 收尾时单独给宽度加过渡，让进度条「跑完最后一段」再淡出，
+      // 而不是瞬间从当前宽度跳到 100%（那样看起来像是半路消失）
+      const bar = barRef.current;
+      if (bar) {
+        bar.style.transition = "width 200ms ease-out";
+        bar.style.width = "100%";
+      }
       hideRef.current = setTimeout(() => {
         setVisible(false);
-        hideRef.current = setTimeout(() => setWidth(0), 200);
-      }, 200);
+        hideRef.current = setTimeout(() => {
+          const el = barRef.current;
+          if (el) {
+            el.style.transition = "none";
+            el.style.width = "0%";
+          }
+        }, 220);
+      }, 260);
     };
 
     const start = () => {
@@ -59,6 +70,9 @@ export default function RouteProgress() {
         clearTimeout(hideRef.current);
         hideRef.current = null;
       }
+
+      // 逐帧写宽度期间关闭过渡，避免和 rAF 打架
+      if (barRef.current) barRef.current.style.transition = "none";
 
       setVisible(true);
       setWidth(8);

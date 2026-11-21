@@ -1,8 +1,8 @@
-import { EN_MESSAGES } from "./i18n-en";
-import { TRADITIONAL_CHARS, TRADITIONAL_PHRASES } from "./i18n-zh-tw";
-
 export const LOCALE_COOKIE = "astra-locale";
 export const DEFAULT_LOCALE = "zh-CN";
+
+/** 语言切换功能总开关：暂时屏蔽时设为 false，界面固定简体中文，入口全部隐藏 */
+export const LANGUAGE_SWITCH_ENABLED = false;
 
 export const LOCALES = [
   {
@@ -35,17 +35,40 @@ export function getLocale(value: string | null | undefined): Locale {
   return isLocale(value) ? value : DEFAULT_LOCALE;
 }
 
-const PHRASES = [...TRADITIONAL_PHRASES].sort((a, b) => b[0].length - a[0].length);
+// 词典体积较大（简繁映射 + 英文词条），默认简体中文时完全用不到，
+// 因此改成按需动态加载：只有真正切到对应语言时才下载。
+type TraditionalData = {
+  chars: Record<string, string>;
+  phrases: Array<[string, string]>;
+};
+
+let enMessages: Record<string, string> | null = null;
+let traditional: TraditionalData | null = null;
+let traditionalPhrases: Array<[string, string]> = [];
+
+/** 预加载指定语言的词典；简体中文无需加载 */
+export async function loadLocaleData(locale: Locale): Promise<void> {
+  if (locale === "en" && !enMessages) {
+    const mod = await import("./i18n-en");
+    enMessages = mod.EN_MESSAGES;
+  }
+  if (locale === "zh-TW" && !traditional) {
+    const mod = await import("./i18n-zh-tw");
+    traditional = { chars: mod.TRADITIONAL_CHARS, phrases: mod.TRADITIONAL_PHRASES };
+    traditionalPhrases = [...mod.TRADITIONAL_PHRASES].sort((a, b) => b[0].length - a[0].length);
+  }
+}
 
 /** Convert Simplified Chinese UI copy to Traditional Chinese. */
 export function toTraditional(text: string): string {
+  if (!traditional) return text;
   let converted = text;
-  for (const [from, to] of PHRASES) {
+  for (const [from, to] of traditionalPhrases) {
     if (converted.includes(from)) converted = converted.split(from).join(to);
   }
   let result = "";
   for (const char of converted) {
-    result += TRADITIONAL_CHARS[char] ?? char;
+    result += traditional.chars[char] ?? char;
   }
   return result;
 }
@@ -190,13 +213,16 @@ function preserveWhitespace(source: string, trimmed: string, translated: string)
 
 function translateEnglish(text: string): string | null {
   if (!text.trim()) return null;
+  const messages = enMessages;
+  // 词典还没加载（默认简体中文路径下不会加载）时不翻译，保持原文
+  if (!messages) return null;
 
   // Raw matches are needed for text nodes that intentionally contain spaces.
-  const raw = EN_MESSAGES[text] ?? EN_SEGMENTS.find(([source]) => source === text)?.[1];
+  const raw = messages[text] ?? EN_SEGMENTS.find(([source]) => source === text)?.[1];
   if (raw !== undefined) return raw;
 
   const trimmed = text.trim();
-  const exact = EN_MESSAGES[trimmed];
+  const exact = messages[trimmed];
   if (exact !== undefined) return preserveWhitespace(text, trimmed, exact);
 
   for (const [pattern, replacement] of EN_PATTERNS) {
@@ -222,6 +248,7 @@ function translateEnglish(text: string): string | null {
 export function translateText(text: string, locale: Locale): string | null {
   if (locale === "zh-CN") return null;
   if (locale === "zh-TW") {
+    if (!traditional) return null;
     if (!/[\u3400-\u9fff]/.test(text)) return null;
     const converted = toTraditional(text);
     return converted === text ? null : converted;

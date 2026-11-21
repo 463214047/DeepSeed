@@ -9,12 +9,17 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { Color, FontSize, TextStyle } from "@tiptap/extension-text-style";
 import { Details, DetailsContent, DetailsSummary } from "@tiptap/extension-details";
 import { useCallback, useEffect, useState } from "react";
-import { renderBBCode } from "@/lib/bbcode";
+import dynamic from "next/dynamic";
 import { useLocale } from "@/components/language-provider";
-import ImagePickerDialog from "@/components/image-picker-dialog";
-import LinkPickerDialog from "@/components/link-picker-dialog";
 import EditorSkeleton from "@/components/editor-skeleton";
-import { translateText } from "@/lib/i18n";
+import { DEFAULT_LOCALE, loadLocaleData, translateText } from "@/lib/i18n";
+
+// 以下弹窗只在打开时才用得到，单独拆成异步 chunk，不进入编辑器主包
+const ImagePickerDialog = dynamic(() => import("@/components/image-picker-dialog"), { ssr: false });
+const LinkPickerDialog = dynamic(() => import("@/components/link-picker-dialog"), { ssr: false });
+const BBCodePreviewDialog = dynamic(() => import("@/components/bbcode-preview-dialog"), {
+  ssr: false,
+});
 
 /** 正文编辑区样式（默认尺寸，发布页 / 论坛用） */
 const CONTENT_CLASS =
@@ -58,7 +63,23 @@ export default function Editor({
   // 用于强制 React 重渲染 — tiptap 的 isActive 只在组件重渲染时才重新计算
   const [, forceRender] = useState(0);
   const { locale } = useLocale();
-  const localizedPlaceholder = translateText(placeholder, locale) ?? placeholder;
+
+  // 词典按需加载：切到非简体中文时先拉取词典，再翻译占位文案
+  const [translatedPlaceholder, setTranslatedPlaceholder] = useState("");
+  useEffect(() => {
+    if (locale === DEFAULT_LOCALE) return;
+    let alive = true;
+    void loadLocaleData(locale).then(() => {
+      if (!alive) return;
+      setTranslatedPlaceholder(translateText(placeholder, locale) ?? "");
+    });
+    return () => {
+      alive = false;
+    };
+  }, [locale, placeholder]);
+
+  const localizedPlaceholder =
+    locale !== DEFAULT_LOCALE && translatedPlaceholder ? translatedPlaceholder : placeholder;
 
   // 可折叠工具栏：由「格式」按钮控制展开 / 收起
   const [toolbarOpen, setToolbarOpen] = useState(false);
@@ -116,8 +137,11 @@ export default function Editor({
         }
 
         event.preventDefault();
-        const html = renderBBCode(text);
-        editor!.chain().focus().insertContent(html).run();
+        // 解析器只在真正粘贴 BBCode 时才加载，不进入编辑器首包
+        void import("@/lib/bbcode").then(({ renderBBCode }) => {
+          if (!editor || editor.isDestroyed) return;
+          editor.chain().focus().insertContent(renderBBCode(text)).run();
+        });
         return true;
       },
     },
@@ -141,18 +165,27 @@ export default function Editor({
     editor.view.dispatch(editor.state.tr);
   }, [editor, localizedPlaceholder]);
 
-  // ---------- 链接 / 图片插入弹窗 ----------
+  // ---------- 链接 / 图片 / BBCode 弹窗 ----------
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [bbcodeDialogOpen, setBbcodeDialogOpen] = useState(false);
 
   const toggleImage = useCallback(() => {
     setLinkDialogOpen(false);
+    setBbcodeDialogOpen(false);
     setImageDialogOpen((open) => !open);
   }, []);
 
   const toggleLink = useCallback(() => {
     setImageDialogOpen(false);
+    setBbcodeDialogOpen(false);
     setLinkDialogOpen((open) => !open);
+  }, []);
+
+  const toggleBbcode = useCallback(() => {
+    setImageDialogOpen(false);
+    setLinkDialogOpen(false);
+    setBbcodeDialogOpen((open) => !open);
   }, []);
 
   // 实例还没创建好时先渲染同尺寸骨架，
@@ -276,6 +309,10 @@ export default function Editor({
                 <IconImage />
               </ToolbarButton>
 
+              <ToolbarButton onClick={toggleBbcode} active={bbcodeDialogOpen} label="BBCode 预览">
+                <span className="text-[10px] font-semibold tracking-tight">BB</span>
+              </ToolbarButton>
+
               <div className="ml-auto flex items-center gap-1">
                 <ToolbarButton
                   onClick={() => editor.chain().focus().undo().run()}
@@ -350,6 +387,15 @@ export default function Editor({
               // 插入后清掉光标处继承的 link mark，否则工具栏「链接」按钮会一直高亮
               .unsetMark("link")
               .run();
+          }}
+        />
+      )}
+      {bbcodeDialogOpen && (
+        <BBCodePreviewDialog
+          onClose={() => setBbcodeDialogOpen(false)}
+          onInsert={(html) => {
+            const insertAt = editor.state.selection.to;
+            editor.chain().focus().insertContentAt(insertAt, html).run();
           }}
         />
       )}

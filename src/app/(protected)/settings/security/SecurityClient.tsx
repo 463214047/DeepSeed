@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { KeyRound } from "lucide-react";
 import QRCode from "qrcode";
 
@@ -331,12 +332,12 @@ export default function SecurityClient({ mode }: { mode: SecurityMode }) {
                 )}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                  <a
+                  <Link
                     href="/reset-password"
                     className="text-xs text-slate-500 transition hover:text-brand-700 hover:underline"
                   >
                     忘记当前密码？通过邮箱重置
-                  </a>
+                  </Link>
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -366,12 +367,12 @@ export default function SecurityClient({ mode }: { mode: SecurityMode }) {
               <p className="mt-1 text-xs text-amber-800">
                 你目前通过 GitHub 登录。设置密码后即可使用邮箱 + 密码登录。
               </p>
-              <a
+              <Link
                 href="/settings/account"
                 className="mt-3 inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-700"
               >
                 前往账号设置 →
-              </a>
+              </Link>
             </div>
           )}
         </section>
@@ -433,12 +434,12 @@ export default function SecurityClient({ mode }: { mode: SecurityMode }) {
                 <p className="mt-1 text-xs text-amber-800">
                   启用两步验证需要先通过密码确认你的身份。前往账号设置中为当前 GitHub 登录设置密码。
                 </p>
-                <a
+                <Link
                   href="/settings/account"
                   className="mt-3 inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-700"
                 >
                   前往账号设置 →
-                </a>
+                </Link>
               </div>
             )}
 
