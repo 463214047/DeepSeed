@@ -1,29 +1,22 @@
 // src/components/editor.tsx
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
-import Link from "@tiptap/extension-link";
-import Placeholder from "@tiptap/extension-placeholder";
-import { Color, FontSize, TextStyle } from "@tiptap/extension-text-style";
-import { Details, DetailsContent, DetailsSummary } from "@tiptap/extension-details";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useLocale } from "@/components/language-provider";
-import EditorSkeleton from "@/components/editor-skeleton";
+import EmojiPicker from "@/components/emoji-picker";
 import { DEFAULT_LOCALE, loadLocaleData, translateText } from "@/lib/i18n";
+import { renderBBCode } from "@/lib/bbcode";
 
-// 以下弹窗只在打开时才用得到，单独拆成异步 chunk，不进入编辑器主包
-const ImagePickerDialog = dynamic(() => import("@/components/image-picker-dialog"), { ssr: false });
-const LinkPickerDialog = dynamic(() => import("@/components/link-picker-dialog"), { ssr: false });
-const BBCodePreviewDialog = dynamic(() => import("@/components/bbcode-preview-dialog"), {
+// 弹窗只在打开时才用得到，单独拆成异步 chunk
+const ImagePickerDropdown = dynamic(() => import("@/components/image-picker-dropdown"), {
   ssr: false,
 });
 
-/** 正文编辑区样式（默认尺寸，发布页 / 论坛用） */
-const CONTENT_CLASS =
-  "prose prose-slate max-w-none min-h-[400px] px-5 py-4 outline-none " +
+type EditMode = "text" | "bbcode";
+
+const PREVIEW_CLASS =
+  "prose prose-slate max-w-none break-words " +
   "prose-headings:font-bold prose-headings:tracking-tight " +
   "prose-blockquote:border-l-4 prose-blockquote:border-brand-300 " +
   "prose-blockquote:bg-brand-50/50 prose-blockquote:py-1 prose-blockquote:not-italic " +
@@ -31,25 +24,29 @@ const CONTENT_CLASS =
   "prose-code:before:content-none prose-code:after:content-none " +
   "prose-img:rounded-xl prose-img:border prose-img:border-slate-200";
 
-/** 正文编辑区样式（紧凑，评论等小场景） */
-const CONTENT_CLASS_COMPACT =
-  "prose prose-slate max-w-none min-h-[140px] px-4 py-3 text-sm outline-none " +
-  "prose-headings:font-bold prose-headings:tracking-tight " +
-  "prose-blockquote:border-l-4 prose-blockquote:border-brand-300 " +
-  "prose-blockquote:bg-brand-50/50 prose-blockquote:py-1 prose-blockquote:not-italic " +
-  "prose-code:rounded prose-code:bg-slate-100 prose-code:px-1.5 prose-code:py-0.5 " +
-  "prose-code:before:content-none prose-code:after:content-none " +
-  "prose-img:rounded-xl prose-img:border prose-img:border-slate-200";
+/** 普通文本模式：全部当纯文本，只转义并保留换行 */
+function toPlainHtml(src: string): string {
+  return src
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br />");
+}
+
+function toHtml(src: string, mode: EditMode): string {
+  return mode === "bbcode" ? renderBBCode(src) : toPlainHtml(src);
+}
 
 export default function Editor({
   content,
   onChange,
-  placeholder = "写点什么…",
+  placeholder,
   compact = false,
   collapsibleToolbar = false,
   contentClassName,
 }: {
   content: string;
+  /** 内容变化时回调，仍是 HTML（由 BBCode 实时渲染得到），上层存储与展示无需改动 */
   onChange: (html: string) => void;
   /** 占位文案 */
   placeholder?: string;
@@ -57,17 +54,15 @@ export default function Editor({
   compact?: boolean;
   /** 工具栏默认隐藏，点击「格式」按钮展开 */
   collapsibleToolbar?: boolean;
-  /** 追加到正文区的样式（如固定高度 + 内部滚动，避免内容增减时容器高度跳动） */
+  /** 追加到输入区的样式（如固定高度 + 内部滚动，避免内容增减时容器高度跳动） */
   contentClassName?: string;
 }) {
-  // 用于强制 React 重渲染 — tiptap 的 isActive 只在组件重渲染时才重新计算
-  const [, forceRender] = useState(0);
   const { locale } = useLocale();
 
   // 词典按需加载：切到非简体中文时先拉取词典，再翻译占位文案
   const [translatedPlaceholder, setTranslatedPlaceholder] = useState("");
   useEffect(() => {
-    if (locale === DEFAULT_LOCALE) return;
+    if (!placeholder || locale === DEFAULT_LOCALE) return;
     let alive = true;
     void loadLocaleData(locale).then(() => {
       if (!alive) return;
@@ -81,127 +76,107 @@ export default function Editor({
   const localizedPlaceholder =
     locale !== DEFAULT_LOCALE && translatedPlaceholder ? translatedPlaceholder : placeholder;
 
-  // 可折叠工具栏：由「格式」按钮控制展开 / 收起
+  // 输入区始终是纯文本，普通文本模式下不解析任何语法
+  const [source, setSource] = useState(content);
+  // 默认普通文本模式，可切换到 BBCode 模式使用 [b] 等标签
+  const [mode, setMode] = useState<EditMode>("text");
   const [toolbarOpen, setToolbarOpen] = useState(false);
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  const editor = useEditor({
-    immediatelyRender: false,
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        codeBlock: false,
-      }),
-      Image.configure({
-        inline: false,
-        allowBase64: false,
-      }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          class: "text-brand-700 underline underline-offset-2",
-        },
-      }),
-      Placeholder.configure({
-        placeholder: localizedPlaceholder,
-      }),
-      // BBCode 粘贴会带来颜色 / 字号，需要对应的 mark 才能识别
-      TextStyle,
-      Color,
-      FontSize,
-      // [spoiler] 折叠块
-      Details.configure({
-        HTMLAttributes: { class: "my-2 rounded-xl border border-slate-200 px-3 py-2" },
-      }),
-      DetailsSummary.configure({
-        HTMLAttributes: {
-          class: "cursor-pointer select-none text-sm font-semibold text-slate-700",
-        },
-      }),
-      DetailsContent.configure({
-        HTMLAttributes: { class: "mt-2" },
-      }),
-    ],
-    content,
-    editorProps: {
-      attributes: {
-        class:
-          (compact ? CONTENT_CLASS_COMPACT : CONTENT_CLASS) +
-          (contentClassName ? ` ${contentClassName}` : ""),
-      },
-      handlePaste: (view, event) => {
-        const text = event.clipboardData?.getData("text/plain") ?? "";
-        if (!text) return false;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageWrapRef = useRef<HTMLDivElement>(null);
+  const emojiWrapRef = useRef<HTMLDivElement>(null);
 
-        if (!/\[(b|i|u|s|color|size|url|quote|spoiler|code|img|\/[a-z]+)(?:=|\])/i.test(text)) {
-          return false;
-        }
-
-        event.preventDefault();
-        // 解析器只在真正粘贴 BBCode 时才加载，不进入编辑器首包
-        void import("@/lib/bbcode").then(({ renderBBCode }) => {
-          if (!editor || editor.isDestroyed) return;
-          editor.chain().focus().insertContent(renderBBCode(text)).run();
-        });
-        return true;
-      },
-    },
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
-    },
-    // 关键：光标移动 / mark 切换 / 节点切换时强制 React 重渲染
-    // 否则 isActive() 只在 onUpdate（文档变）时才重新计算，工具栏按钮 active 态不更新
-    onSelectionUpdate: () => forceRender((n) => n + 1),
-    onTransaction: () => forceRender((n) => n + 1),
-  });
-
+  // 点击编辑器外的区域或按 Esc 关闭图片 / 表情下拉
   useEffect(() => {
-    if (!editor) return;
-    const placeholderExtension = editor.extensionManager.extensions.find(
-      (extension) => extension.name === "placeholder",
-    );
-    if (!placeholderExtension) return;
+    if (!imagePickerOpen && !emojiPickerOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!imageWrapRef.current?.contains(target)) setImagePickerOpen(false);
+      if (!emojiWrapRef.current?.contains(target)) setEmojiPickerOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setImagePickerOpen(false);
+      setEmojiPickerOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [imagePickerOpen, emojiPickerOpen]);
 
-    (placeholderExtension.options as { placeholder?: string }).placeholder = localizedPlaceholder;
-    editor.view.dispatch(editor.state.tr);
-  }, [editor, localizedPlaceholder]);
+  /** 更新源码，同时按当前模式向上层输出 HTML，保证现有存储 / 展示逻辑不变 */
+  const update = useCallback(
+    (next: string) => {
+      setSource(next);
+      onChange(toHtml(next, mode));
+    },
+    [onChange, mode],
+  );
 
-  // ---------- 链接 / 图片 / BBCode 弹窗 ----------
-  const [imageDialogOpen, setImageDialogOpen] = useState(false);
-  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
-  const [bbcodeDialogOpen, setBbcodeDialogOpen] = useState(false);
+  /** 切换模式时用同一份内容重新输出一次 */
+  const switchMode = useCallback(
+    (next: EditMode) => {
+      setMode(next);
+      // 回到普通文本时收起预览
+      if (next === "text") setPreviewOpen(false);
+      onChange(toHtml(source, next));
+    },
+    [source, onChange],
+  );
 
-  const toggleImage = useCallback(() => {
-    setLinkDialogOpen(false);
-    setBbcodeDialogOpen(false);
-    setImageDialogOpen((open) => !open);
-  }, []);
+  /** 在光标处插入片段；有选中内容时用 before/after 包住 */
+  const insert = useCallback(
+    (before: string, after = "") => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selected = source.slice(start, end);
+      const text = before + selected + after;
+      const caret = selected ? start + before.length + selected.length : start + before.length;
 
-  const toggleLink = useCallback(() => {
-    setImageDialogOpen(false);
-    setBbcodeDialogOpen(false);
-    setLinkDialogOpen((open) => !open);
-  }, []);
+      textarea.focus();
+      textarea.setSelectionRange(start, end);
 
-  const toggleBbcode = useCallback(() => {
-    setImageDialogOpen(false);
-    setLinkDialogOpen(false);
-    setBbcodeDialogOpen((open) => !open);
-  }, []);
+      // 必须走浏览器的编辑管线插入：直接 setState 改 value 会清空原生撤销栈，
+      // 导致点完工具栏按钮后 Ctrl+Z 无法回退
+      let inserted = false;
+      try {
+        inserted = document.execCommand("insertText", false, text);
+      } catch {
+        inserted = false;
+      }
 
-  // 实例还没创建好时先渲染同尺寸骨架，
-  // 直接 return null 会让编辑区高度瞬间变 0，下方按钮会向上跳一下
-  if (!editor) {
-    return <EditorSkeleton compact={compact} contentClassName={contentClassName} />;
-  }
+      if (!inserted) {
+        const next = source.slice(0, start) + text + source.slice(end);
+        setSource(next);
+        onChange(toHtml(next, mode));
+      }
 
-  // 工具栏何时可见：非折叠模式一直显示；折叠模式由按钮控制
+      requestAnimationFrame(() => {
+        textarea.focus();
+        textarea.setSelectionRange(caret, caret);
+      });
+    },
+    [source, onChange, mode],
+  );
+
+  const wrap = useCallback((tag: string) => insert(`[${tag}]`, `[/${tag}]`), [insert]);
+
   const showToolbar = !collapsibleToolbar || toolbarOpen;
 
   return (
     <>
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white [[data-background=tohru]_&]:bg-transparent">
+      <div className="rounded-2xl border border-slate-200 bg-white [[data-background=tohru]_&]:bg-transparent">
         {collapsibleToolbar && !showToolbar && (
-          <div className="flex justify-end px-2 py-1">
+          <div className="flex justify-end rounded-t-2xl px-2 py-1">
             <button
               type="button"
               onClick={() => setToolbarOpen(true)}
@@ -217,188 +192,114 @@ export default function Editor({
         )}
 
         {showToolbar && (
-          <div className="relative">
-            <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 bg-slate-50/70 px-2 py-2">
-              <ToolbarButton
-                active={editor.isActive("bold")}
-                onClick={() => editor.chain().focus().toggleBold().run()}
-                label="加粗"
-              >
-                <strong>B</strong>
-              </ToolbarButton>
-
-              <ToolbarButton
-                active={editor.isActive("italic")}
-                onClick={() => editor.chain().focus().toggleItalic().run()}
-                label="斜体"
-              >
-                <em>I</em>
-              </ToolbarButton>
-
-              <ToolbarButton
-                active={editor.isActive("strike")}
-                onClick={() => editor.chain().focus().toggleStrike().run()}
-                label="删除线"
-              >
-                <span className="line-through">S</span>
-              </ToolbarButton>
-
-              <Divider />
-
-              <ToolbarButton
-                active={editor.isActive("heading", { level: 1 })}
-                onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-                label="标题 1"
-              >
-                H1
-              </ToolbarButton>
-
-              <ToolbarButton
-                active={editor.isActive("heading", { level: 2 })}
-                onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                label="标题 2"
-              >
-                H2
-              </ToolbarButton>
-
-              <ToolbarButton
-                active={editor.isActive("heading", { level: 3 })}
-                onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-                label="标题 3"
-              >
-                H3
-              </ToolbarButton>
-
-              <Divider />
-
-              <ToolbarButton
-                active={editor.isActive("bulletList")}
-                onClick={() => editor.chain().focus().toggleBulletList().run()}
-                label="无序列表"
-              >
-                <IconList />
-              </ToolbarButton>
-
-              <ToolbarButton
-                active={editor.isActive("orderedList")}
-                onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                label="有序列表"
-              >
-                <IconOrderedList />
-              </ToolbarButton>
-
-              <ToolbarButton
-                active={editor.isActive("blockquote")}
-                onClick={() => editor.chain().focus().toggleBlockquote().run()}
-                label="引用"
-              >
-                <IconQuote />
-              </ToolbarButton>
-
-              <Divider />
-
-              <ToolbarButton
-                onClick={toggleLink}
-                active={linkDialogOpen || editor.isActive("link")}
-                label="链接"
-              >
-                <IconLink />
-              </ToolbarButton>
-
-              <ToolbarButton onClick={toggleImage} active={imageDialogOpen} label="插入图片">
-                <IconImage />
-              </ToolbarButton>
-
-              <ToolbarButton onClick={toggleBbcode} active={bbcodeDialogOpen} label="BBCode 预览">
-                <span className="text-[10px] font-semibold tracking-tight">BB</span>
-              </ToolbarButton>
-
-              <div className="ml-auto flex items-center gap-1">
-                <ToolbarButton
-                  onClick={() => editor.chain().focus().undo().run()}
-                  active={false}
-                  label="撤销"
-                  disabled={!editor.can().undo()}
-                >
-                  <IconUndo />
+          <div className="flex flex-wrap items-center gap-1 rounded-t-2xl border-b border-slate-100 bg-slate-50/70 px-2 py-2">
+            {mode === "bbcode" && (
+              <>
+                <ToolbarButton onClick={() => wrap("quote")} label="引用">
+                  <IconQuote />
                 </ToolbarButton>
-                <ToolbarButton
-                  onClick={() => editor.chain().focus().redo().run()}
-                  active={false}
-                  label="重做"
-                  disabled={!editor.can().redo()}
-                >
-                  <IconRedo />
+                <ToolbarButton onClick={() => insert("[spoiler=标题]", "[/spoiler]")} label="折叠块">
+                  <IconSpoiler />
                 </ToolbarButton>
 
-                {collapsibleToolbar && (
-                  <button
-                    type="button"
-                    onClick={() => setToolbarOpen(false)}
-                    aria-expanded={true}
-                    aria-label="收起格式工具栏"
-                    title="收起格式工具栏"
-                    className="ml-1 grid size-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-900"
+                <Divider />
+
+                {/* 表情 */}
+                <div ref={emojiWrapRef} className="relative">
+                  <ToolbarButton
+                    onClick={() => setEmojiPickerOpen((open) => !open)}
+                    active={emojiPickerOpen}
+                    label="表情"
                   >
-                    <IconChevronUp />
-                  </button>
-                )}
-              </div>
+                    <IconEmoji />
+                  </ToolbarButton>
+                  {emojiPickerOpen && (
+                    <EmojiPicker onPick={(emoji) => insert(emoji, "")} />
+                  )}
+                </div>
+
+                {/* 包裹一层相对定位容器，下拉面板以按钮为锚点 */}
+                <div ref={imageWrapRef} className="relative">
+                  <ToolbarButton
+                    onClick={() => setImagePickerOpen((open) => !open)}
+                    active={imagePickerOpen}
+                    label="插入图片"
+                  >
+                    <IconImage />
+                  </ToolbarButton>
+                  {imagePickerOpen && (
+                    <ImagePickerDropdown
+                      onClose={() => setImagePickerOpen(false)}
+                      onPick={(urls) => {
+                        insert(urls.map((url) => `[img]${url}[/img]`).join("\n"));
+                      }}
+                    />
+                  )}
+                </div>
+
+                <Divider />
+
+                <ToolbarButton
+                  onClick={() => setPreviewOpen((open) => !open)}
+                  active={previewOpen}
+                  label="预览"
+                >
+                  <IconEye />
+                </ToolbarButton>
+              </>
+            )}
+
+            <div className="ml-auto flex items-center gap-1">
+              {/* 普通文本 / BBCode 模式切换 */}
+              <ToolbarButton
+                onClick={() => switchMode(mode === "bbcode" ? "text" : "bbcode")}
+                active={mode === "bbcode"}
+                label={mode === "bbcode" ? "切换到普通文本" : "切换到 BBCode"}
+              >
+                <IconCode />
+              </ToolbarButton>
+              {collapsibleToolbar && (
+                <button
+                  type="button"
+                  onClick={() => setToolbarOpen(false)}
+                  aria-expanded={true}
+                  aria-label="收起格式工具栏"
+                  title="收起格式工具栏"
+                  className="ml-1 grid size-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-900"
+                >
+                  <IconChevronUp />
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        <EditorContent editor={editor} />
+        <textarea
+          ref={textareaRef}
+          value={source}
+          onChange={(e) => update(e.target.value)}
+          placeholder={localizedPlaceholder}
+          spellCheck={false}
+          className={`w-full resize-none border-0 bg-transparent font-mono leading-relaxed text-slate-800 outline-none placeholder:font-sans placeholder:text-slate-400 ${
+            compact ? "min-h-[140px] px-4 py-3 text-sm" : "min-h-[400px] px-5 py-4 text-sm"
+          } ${contentClassName ?? ""} ${mode === "bbcode" && previewOpen ? "hidden" : "block"}`}
+        />
+
+        {/* 预览直接替换输入区，保持同样高度避免布局跳动 */}
+        {mode === "bbcode" && previewOpen && (
+          <div
+            className={`overflow-y-auto ${
+              compact ? "min-h-[140px] px-4 py-3 text-sm" : "min-h-[400px] px-5 py-4 text-sm"
+            } ${contentClassName ?? ""}`}
+          >
+            <div
+              className={PREVIEW_CLASS}
+              // renderBBCode 内部已做 HTML 转义与 url / color / size 白名单校验
+              dangerouslySetInnerHTML={{ __html: renderBBCode(source) }}
+            />
+          </div>
+        )}
       </div>
-      {imageDialogOpen && (
-        <ImagePickerDialog
-          title="插入图片"
-          kind="screenshot"
-          onClose={() => setImageDialogOpen(false)}
-          onConfirm={(urls) => {
-            const insertAt = editor.state.selection.to;
-            editor
-              .chain()
-              .focus()
-              .insertContentAt(
-                insertAt,
-                urls.map((url) => ({
-                  type: "image",
-                  attrs: { src: url },
-                })),
-              )
-              .run();
-          }}
-        />
-      )}
-      {linkDialogOpen && (
-        <LinkPickerDialog
-          onClose={() => setLinkDialogOpen(false)}
-          onConfirm={({ title, href }) => {
-            const insertAt = editor.state.selection.to;
-            editor
-              .chain()
-              .focus()
-              .insertContentAt(insertAt, {
-                type: "text",
-                text: title,
-                marks: [{ type: "link", attrs: { href } }],
-              })
-              // 插入后清掉光标处继承的 link mark，否则工具栏「链接」按钮会一直高亮
-              .unsetMark("link")
-              .run();
-          }}
-        />
-      )}
-      {bbcodeDialogOpen && (
-        <BBCodePreviewDialog
-          onClose={() => setBbcodeDialogOpen(false)}
-          onInsert={(html) => {
-            const insertAt = editor.state.selection.to;
-            editor.chain().focus().insertContentAt(insertAt, html).run();
-          }}
-        />
-      )}
     </>
   );
 }
@@ -406,14 +307,12 @@ export default function Editor({
 /* ---------- 工具栏按钮 ---------- */
 function ToolbarButton({
   children,
-  active,
-  disabled,
+  active = false,
   onClick,
   label,
 }: {
   children: React.ReactNode;
-  active: boolean;
-  disabled?: boolean;
+  active?: boolean;
   onClick: () => void;
   label: string;
 }) {
@@ -421,15 +320,12 @@ function ToolbarButton({
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
       aria-label={label}
       title={label}
       className={`grid h-8 min-w-8 place-items-center rounded-md px-1.5 text-sm transition ${
-        disabled
-          ? "cursor-not-allowed text-slate-300"
-          : active
-            ? "bg-brand-600 text-white"
-            : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
+        active
+          ? "bg-brand-600 text-white"
+          : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
       }`}
     >
       {children}
@@ -456,69 +352,41 @@ function IconChevronUp() {
   );
 }
 
-function IconList() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" className="size-4">
-      <path
-        d="M7 5h9M7 10h9M7 15h9"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <circle cx="4" cy="5" r="1" fill="currentColor" />
-      <circle cx="4" cy="10" r="1" fill="currentColor" />
-      <circle cx="4" cy="15" r="1" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconOrderedList() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" className="size-4">
-      <path
-        d="M8 5h8M8 10h8M8 15h8"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <text x="3" y="7" fontSize="6" fill="currentColor">
-        1
-      </text>
-      <text x="3" y="12" fontSize="6" fill="currentColor">
-        2
-      </text>
-      <text x="3" y="17" fontSize="6" fill="currentColor">
-        3
-      </text>
-    </svg>
-  );
-}
-
 function IconQuote() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="size-4">
-      <path d="M6 8v7M3 8h6M3 11h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path
-        d="M13 6h4M13 10h4M13 14h4"
+        d="M8 6H4.5A1.5 1.5 0 0 0 3 7.5v2A1.5 1.5 0 0 0 4.5 11H6v1.5A1.5 1.5 0 0 1 4.5 14H4M17 6h-3.5A1.5 1.5 0 0 0 12 7.5v2a1.5 1.5 0 0 0 1.5 1.5H15v1.5a1.5 1.5 0 0 1-1.5 1.5H13"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
 }
 
-function IconLink() {
+function IconSpoiler() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="size-4">
+      <rect
+        x="3"
+        y="5"
+        width="14"
+        height="10"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
       <path
-        d="M9 11a3 3 0 0 0 4 0l3-3a3 3 0 0 0-4-4l-1 1"
+        d="M3 12.5h14"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
       />
       <path
-        d="M11 9a3 3 0 0 0-4 0l-3 3a3 3 0 0 0 4 4l1-1"
+        d="M7.5 8.5h5"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
@@ -530,23 +398,18 @@ function IconLink() {
 function IconImage() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="size-4">
-      <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="7.5" cy="8.5" r="1" fill="currentColor" />
-      <path
-        d="M4 14l3.5-3.5a1.5 1.5 0 0 1 2 0L13 14"
+      <rect
+        x="3.5"
+        y="4.5"
+        width="13"
+        height="11"
+        rx="2"
         stroke="currentColor"
         strokeWidth="1.5"
-        strokeLinecap="round"
       />
-    </svg>
-  );
-}
-
-function IconUndo() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" className="size-4">
+      <circle cx="7.5" cy="8" r="1.2" fill="currentColor" />
       <path
-        d="M7 6L3 10l4 4M3 10h9a4 4 0 0 1 0 8H9"
+        d="m4.5 13.5 3.6-3.2a1 1 0 0 1 1.34.04l4.56 4.16"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
@@ -556,11 +419,43 @@ function IconUndo() {
   );
 }
 
-function IconRedo() {
+function IconEye() {
   return (
     <svg viewBox="0 0 20 20" fill="none" className="size-4">
       <path
-        d="M13 6l4 4-4 4M17 10H8a4 4 0 0 0 0 8h3"
+        d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+/** 表情 */
+function IconEmoji() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="size-4">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M7.2 11.6a3.4 3.4 0 0 0 5.6 0"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <circle cx="7.6" cy="8.2" r=".9" fill="currentColor" />
+      <circle cx="12.4" cy="8.2" r=".9" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 模式切换图标：代码括号 </> */
+function IconCode() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="size-4">
+      <path
+        d="M5.5 6.5 2 10l3.5 3.5M14.5 6.5 18 10l-3.5 3.5M11.5 4.5l-3 11"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"

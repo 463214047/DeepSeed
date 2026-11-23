@@ -48,7 +48,6 @@ const SKIP_SELECTOR = [
   "code",
   "pre",
   "[contenteditable='true']",
-  ".ProseMirror",
   ".prose",
   "[data-no-translate]",
 ].join(",");

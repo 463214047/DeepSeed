@@ -1,16 +1,9 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Send, TriangleAlert } from "lucide-react";
-import EditorSkeleton from "@/components/editor-skeleton";
-
-// TipTap + ProseMirror 体积较大，按需异步加载，避免拖慢整页首屏
-const Editor = dynamic(() => import("@/components/editor"), {
-  ssr: false,
-  loading: () => <EditorSkeleton compact contentClassName="h-[300px] overflow-y-auto" />,
-});
+import Editor from "@/components/editor";
 
 export default function ContactForm() {
   const [body, setBody] = useState("");
@@ -78,7 +71,7 @@ export default function ContactForm() {
         content={body}
         onChange={setBody}
         compact
-        placeholder="请描述你的问题…"
+ 
         contentClassName="h-[300px] overflow-y-auto"
       />
 

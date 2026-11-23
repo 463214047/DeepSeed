@@ -37,12 +37,6 @@ export default function HeroCarousel() {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
 
-  // 联系管理页的编辑器是独立的异步 chunk（TipTap 约 130KB gzip），
-  // 页面渲染完才开始下载会明显延迟。悬停/聚焦时提前拉取，和路由跳转并行。
-  const preloadEditor = useCallback(() => {
-    void import("@/components/editor");
-  }, []);
-
   const go = useCallback((delta: number) => {
     setIdx((i) => (i + delta + SLIDES.length) % SLIDES.length);
   }, []);
@@ -109,8 +103,6 @@ export default function HeroCarousel() {
                   </Link>
                   <Link
                     href="/contact"
-                    onMouseEnter={preloadEditor}
-                    onFocus={preloadEditor}
                     className="rounded-full border border-white/30 px-5 py-2 text-sm font-medium text-white transition hover:bg-white/10 active:scale-95 [[data-background=tohru]_&]:border [[data-background=tohru]_&]:border-slate-400 [[data-background=tohru]_&]:text-slate-900!"
                   >
                     联系管理
