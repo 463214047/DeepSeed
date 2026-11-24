@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useLocale } from "@/components/language-provider";
 import EmojiPicker from "@/components/emoji-picker";
+import LinkPicker from "@/components/link-picker";
 import { DEFAULT_LOCALE, loadLocaleData, translateText } from "@/lib/i18n";
 import { renderBBCode } from "@/lib/bbcode";
 
@@ -83,25 +84,30 @@ export default function Editor({
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  const [linkInitialText, setLinkInitialText] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageWrapRef = useRef<HTMLDivElement>(null);
   const emojiWrapRef = useRef<HTMLDivElement>(null);
+  const linkWrapRef = useRef<HTMLDivElement>(null);
 
-  // 点击编辑器外的区域或按 Esc 关闭图片 / 表情下拉
+  // 点击编辑器外的区域或按 Esc 关闭图片 / 表情 / 链接下拉
   useEffect(() => {
-    if (!imagePickerOpen && !emojiPickerOpen) return;
+    if (!imagePickerOpen && !emojiPickerOpen && !linkPickerOpen) return;
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (!imageWrapRef.current?.contains(target)) setImagePickerOpen(false);
       if (!emojiWrapRef.current?.contains(target)) setEmojiPickerOpen(false);
+      if (!linkWrapRef.current?.contains(target)) setLinkPickerOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setImagePickerOpen(false);
       setEmojiPickerOpen(false);
+      setLinkPickerOpen(false);
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -109,7 +115,7 @@ export default function Editor({
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [imagePickerOpen, emojiPickerOpen]);
+  }, [imagePickerOpen, emojiPickerOpen, linkPickerOpen]);
 
   /** 更新源码，同时按当前模式向上层输出 HTML，保证现有存储 / 展示逻辑不变 */
   const update = useCallback(
@@ -131,14 +137,14 @@ export default function Editor({
     [source, onChange],
   );
 
-  /** 在光标处插入片段；有选中内容时用 before/after 包住 */
+  /** 在光标处插入片段；有选中内容时用 before/after 包住（wrapSelection=false 则直接替换选中） */
   const insert = useCallback(
-    (before: string, after = "") => {
+    (before: string, after = "", wrapSelection = true) => {
       const textarea = textareaRef.current;
       if (!textarea) return;
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
-      const selected = source.slice(start, end);
+      const selected = wrapSelection ? source.slice(start, end) : "";
       const text = before + selected + after;
       const caret = selected ? start + before.length + selected.length : start + before.length;
 
@@ -232,6 +238,34 @@ export default function Editor({
                       onClose={() => setImagePickerOpen(false)}
                       onPick={(urls) => {
                         insert(urls.map((url) => `[img]${url}[/img]`).join("\n"));
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* 插入链接 */}
+                <div ref={linkWrapRef} className="relative">
+                  <ToolbarButton
+                    onClick={() => {
+                      const textarea = textareaRef.current;
+                      const selected = textarea
+                        ? source.slice(textarea.selectionStart, textarea.selectionEnd)
+                        : "";
+                      setLinkInitialText(selected);
+                      setLinkPickerOpen((open) => !open);
+                    }}
+                    active={linkPickerOpen}
+                    label="插入链接"
+                  >
+                    <IconLink />
+                  </ToolbarButton>
+                  {linkPickerOpen && (
+                    <LinkPicker
+                      initialText={linkInitialText}
+                      onClose={() => setLinkPickerOpen(false)}
+                      onPick={(href, label) => {
+                        insert(label ? `[url=${href}]${label}[/url]` : `[url]${href}[/url]`, "", false);
+                        setLinkPickerOpen(false);
                       }}
                     />
                   )}
@@ -429,6 +463,28 @@ function IconEye() {
         strokeLinejoin="round"
       />
       <circle cx="10" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+/** 插入链接 */
+function IconLink() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="size-4">
+      <path
+        d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

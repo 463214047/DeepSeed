@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
   Check,
-  Image as ImageIcon,
+  ImagePlus,
   Languages,
   Palette,
   Paperclip,
@@ -29,6 +29,7 @@ import {
   writeWallpaperOpacity,
 } from "@/components/wallpaper-background";
 import { backgroundPreviewStyle } from "@/lib/backgrounds";
+import { compressImage } from "@/lib/image-compress";
 
 export type SettingsProfile = {
   nickname: string;
@@ -52,6 +53,9 @@ const ACTION_BUTTON =
   "inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white shadow-sm shadow-brand-600/20 transition hover:bg-brand-600/90 hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50";
 
 const AVATAR_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+/** 原图上限（压缩前） */
+const AVATAR_SOURCE_MAX_BYTES = 20 * 1024 * 1024;
+/** 压缩后的实际上限，与服务端一致 */
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 
 function formatFileSize(bytes: number): string {
@@ -250,8 +254,8 @@ function ProfilePanel({ profile }: { profile: SettingsProfile }) {
       setAvatarDialogError("仅支持 JPG / PNG / WebP");
       return;
     }
-    if (file.size > AVATAR_MAX_BYTES) {
-      setAvatarDialogError("图片不能超过 5MB");
+    if (file.size > AVATAR_SOURCE_MAX_BYTES) {
+      setAvatarDialogError("图片不能超过 20MB");
       return;
     }
     setAvatarDialogError("");
@@ -304,8 +308,14 @@ function ProfilePanel({ profile }: { profile: SettingsProfile }) {
     try {
       let nextUrl = url;
       if (avatarFile) {
+        // 头像用更低质量以进一步减小体积
+        const compressed = await compressImage(avatarFile, { maxEdge: 2560, quality: 0.8 });
+        if (compressed.size > AVATAR_MAX_BYTES) {
+          setAvatarDialogError("图片压缩后仍超过 5MB，请换一张");
+          return;
+        }
         const formData = new FormData();
-        formData.append("file", avatarFile);
+        formData.append("file", compressed);
         const uploadRes = await fetch("/api/upload?kind=avatar", {
           method: "POST",
           body: formData,
@@ -538,7 +548,7 @@ function ProfilePanel({ profile }: { profile: SettingsProfile }) {
                     }
                   }}
                   onDrop={handleAvatarDrop}
-                  className={`mt-2 flex min-h-[150px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-6 py-8 text-center transition focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-400/10 ${
+                  className={`group mt-2 flex min-h-[150px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-6 py-8 text-center transition focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-400/10 ${
                     avatarDragging
                       ? "border-brand-400 bg-brand-50/60"
                       : "border-slate-300 bg-slate-50/40 hover:border-slate-400 hover:bg-slate-50"
@@ -553,8 +563,12 @@ function ProfilePanel({ profile }: { profile: SettingsProfile }) {
                     disabled={avatarBusy}
                     className="sr-only"
                   />
-                  <ImageIcon className="size-9 text-brand-500" strokeWidth={1.5} />
-                  <span className="text-sm font-medium text-slate-700">
+                  {/* 图片 + 加号图标：提示可添加 / 替换图片 */}
+                  <ImagePlus
+                    className="size-9 text-slate-400 transition-colors group-hover:text-brand-500"
+                    strokeWidth={1.5}
+                  />
+                  <span className="text-sm font-medium text-slate-700 transition-colors group-hover:text-brand-600">
                     点击或拖动图片到此处上传
                   </span>
                 </label>
