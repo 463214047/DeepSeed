@@ -9,19 +9,24 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
           version: 10.26.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate route types
+        # LayoutProps / PageProps 等全局类型由 next typegen 生成，
+        # 不先生成就直接 tsc 会报 Cannot find name 'LayoutProps'
+        run: pnpm exec next typegen
 
       - name: Type check
         run: pnpm exec tsc --noEmit
