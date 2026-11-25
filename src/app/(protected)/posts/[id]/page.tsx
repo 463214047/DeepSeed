@@ -24,9 +24,6 @@ const CATEGORY_META: Record<string, { label: string; tagBg: string; tagText: str
   动漫: { label: "动漫", tagBg: "bg-violet-600", tagText: "text-white" },
   电影: { label: "电影", tagBg: "bg-amber-500", tagText: "text-white" },
   剧集: { label: "剧集", tagBg: "bg-rose-500", tagText: "text-white" },
-  音乐: { label: "音乐", tagBg: "bg-cyan-600", tagText: "text-white" },
-  体育: { label: "体育", tagBg: "bg-lime-600", tagText: "text-white" },
-  综艺: { label: "综艺", tagBg: "bg-fuchsia-500", tagText: "text-white" },
 };
 
 type DetailPost = {

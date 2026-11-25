@@ -69,11 +69,20 @@ export default function GameClient(props: {
     }
 
     /* ============ 抽卡核心 ============ */
+    type GachaItem = {
+      type: PoolItem["type"];
+      name: string;
+      rarity: number;
+      index: number;
+      value?: number;
+      days?: number;
+    };
+
     const gacha = {
       pity5: props.initialPity5,
       pity4: props.initialPity4,
       total: props.initialTotal,
-      history: (Array.isArray(props.initialHistory) ? props.initialHistory : []) as any[],
+      history: (Array.isArray(props.initialHistory) ? props.initialHistory : []) as GachaItem[],
 
       pick(rarity: number): PoolItem {
         const pool = POOL[rarity];
@@ -118,7 +127,7 @@ export default function GameClient(props: {
         }
 
         const base = this.pick(rarity);
-        const item: any = { type: base.type, name: base.name, rarity, index: this.total };
+        const item: GachaItem = { type: base.type, name: base.name, rarity, index: this.total };
         if (base.type === "magic") item.value = randInt(base.min, base.max);
         else if (base.type === "rainbow") item.days = randInt(base.dayMin, base.dayMax);
 
@@ -169,7 +178,11 @@ export default function GameClient(props: {
     function audio() {
       if (!AC) {
         try {
-          AC = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const Ctor =
+            window.AudioContext ??
+            (window as unknown as { webkitAudioContext?: typeof AudioContext })
+              .webkitAudioContext;
+          AC = Ctor ? new Ctor() : null;
         } catch {
           AC = null;
         }
@@ -299,7 +312,7 @@ export default function GameClient(props: {
 
     /* ============ 结果展示 ============ */
 
-    function createCard(item: any) {
+    function createCard(item: GachaItem) {
       const el = document.createElement("div");
       el.className = "card r" + item.rarity;
 
@@ -352,7 +365,7 @@ export default function GameClient(props: {
     }
 
     // 黑幕覆盖期间提前把卡片 DOM 准备好（opacity:0）
-    function prepareCards(results: any[]) {
+    function prepareCards(results: GachaItem[]) {
       cardsEl.innerHTML = "";
       cardsEl.className = "cards " + (results.length > 1 ? "grid" : "single");
       resultView.classList.toggle("single", results.length === 1);
@@ -360,7 +373,7 @@ export default function GameClient(props: {
       results.forEach((item) => cardsEl.appendChild(createCard(item)));
     }
 
-    async function showResults(results: any[]) {
+    async function showResults(results: GachaItem[]) {
       // 逐张揭示：十连间隔 130ms，单抽 320ms
       const els = Array.from(cardsEl.querySelectorAll<HTMLElement>(".card"));
       const interval = results.length > 1 ? 130 : 320;
@@ -423,12 +436,13 @@ export default function GameClient(props: {
 
       magic -= cost;
 
-      const results: any[] = [];
+      const results: GachaItem[] = [];
       for (let i = 0; i < count; i++) {
         const r = gacha.pull();
         results.push(r);
-        if (r.type === "magic") magic += r.value;
-        else if (r.type === "rainbow") inventory.rainbowIds.push({ days: r.days, ts: Date.now() });
+        if (r.type === "magic") magic += r.value ?? 0;
+        else if (r.type === "rainbow")
+          inventory.rainbowIds.push({ days: r.days ?? 0, ts: Date.now() });
         else if (r.type === "tohru") inventory.tohru++;
       }
 
@@ -871,6 +885,8 @@ export default function GameClient(props: {
         } catch {}
       }
     };
+  // 仅初始化一次：整块抽卡交互都是命令式的 DOM 操作，依赖初始 props 快照
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

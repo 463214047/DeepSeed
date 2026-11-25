@@ -10,18 +10,20 @@ export default async function Navbar() {
   let unreadTotal = 0;
   let myUid: number | null = null;
   let userImage: string | null = user?.image ?? null;
+  let isAdmin = false;
   const userName: string | null = user?.name ?? null;
   if (user?.email) {
     try {
       await ensureSchema();
 
-      const uidRows = await query<{ uid: number; avatar_url: string | null }>(
-        `SELECT uid, avatar_url FROM public.account_users WHERE email = $1 LIMIT 1`,
+      const uidRows = await query<{ uid: number; avatar_url: string | null; role: string | null }>(
+        `SELECT uid, avatar_url, role FROM public.account_users WHERE email = $1 LIMIT 1`,
         [user.email],
       );
       myUid = uidRows[0]?.uid ?? null;
       // DB 里的头像优先于 OAuth user.image
       if (uidRows[0]?.avatar_url) userImage = uidRows[0].avatar_url;
+      isAdmin = uidRows[0]?.role === "admin";
 
       unreadTotal = await getUnreadTotal(user.email);
     } catch {
@@ -36,6 +38,7 @@ export default async function Navbar() {
       userName={userName}
       myUid={myUid}
       unreadTotal={unreadTotal}
+      isAdmin={isAdmin}
     />
   );
 }

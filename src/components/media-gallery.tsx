@@ -15,6 +15,12 @@ type Props = {
  * 封面图在网格内加「封面」徽章标识
  */
 export default function MediaGallery({ coverUrl, screenshotUrls, title }: Props) {
+  // Gallery Modal 状态（必须在任何提前 return 之前调用 Hook）
+  const [gallery, setGallery] = useState<{ open: boolean; startIdx: number }>({
+    open: false,
+    startIdx: 0,
+  });
+
   // 构建统一图片列表
   const items: { url: string; isCover: boolean }[] = [];
 
@@ -26,20 +32,6 @@ export default function MediaGallery({ coverUrl, screenshotUrls, title }: Props)
   }
 
   if (items.length === 0) return null;
-
-  // Gallery Modal 状态
-  const [gallery, setGallery] = useState<{ open: boolean; startIdx: number }>({
-    open: false,
-    startIdx: 0,
-  });
-
-  // 网格响应式列数
-  const gridCols =
-    items.length === 1
-      ? "grid-cols-1"
-      : items.length === 2
-        ? "grid-cols-2"
-        : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
 
   return (
     <>
@@ -55,18 +47,16 @@ export default function MediaGallery({ coverUrl, screenshotUrls, title }: Props)
             )}
           </span>
         </figcaption>
-        <div className="p-2 bg-slate-100">
-          <div className={`grid gap-1.5 ${gridCols}`}>
-            {items.map((item, i) => (
-              <ThumbItem
-                key={`${item.url}-${i}`}
-                url={item.url}
-                isCover={item.isCover}
-                title={title}
-                onClick={() => setGallery({ open: true, startIdx: i })}
-              />
-            ))}
-          </div>
+        <div className="flex flex-wrap items-start gap-3 px-5 py-4">
+          {items.map((item, i) => (
+            <ThumbItem
+              key={`${item.url}-${i}`}
+              url={item.url}
+              isCover={item.isCover}
+              title={title}
+              onClick={() => setGallery({ open: true, startIdx: i })}
+            />
+          ))}
         </div>
       </figure>
 
@@ -97,14 +87,15 @@ function ThumbItem({
     <button
       type="button"
       onClick={onClick}
-      className="group relative aspect-[16/10] overflow-hidden rounded-lg bg-slate-100 ring-1 ring-slate-200 transition hover:ring-slate-400 hover:shadow-sm"
+      // 与正文 BBCode 图片一致：按原始比例、最高 160px、圆角
+      className="group relative my-1 inline-block cursor-zoom-in"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={url}
         alt={isCover ? `${title} 封面` : `${title} 图片`}
         data-no-translate
-        className="h-full w-full object-contain transition group-hover:scale-[1.02]"
+        className="inline-block max-h-40 max-w-full rounded bg-slate-100"
         loading="lazy"
       />
       {/* 封面徽章 */}
@@ -114,7 +105,7 @@ function ThumbItem({
         </span>
       )}
       {/* hover 放大指示 */}
-      <span className="absolute inset-0 grid place-items-center bg-black/0 text-white opacity-0 transition group-hover:bg-black/15 group-hover:opacity-100">
+      <span className="absolute inset-0 grid place-items-center rounded bg-black/0 text-white opacity-0 transition group-hover:bg-black/15 group-hover:opacity-100">
         <svg viewBox="0 0 20 20" fill="none" className="size-5 drop-shadow">
           <path
             d="M4 8V4h4M12 4h4v4M16 12v4h-4M8 16H4v-4"

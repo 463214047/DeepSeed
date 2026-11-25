@@ -56,7 +56,9 @@ export default function SecurityClient({ mode }: { mode: SecurityMode }) {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
+    // 挂载后拉取 2FA 状态，setState 均在 await 之后
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchStatus();
   }, [fetchStatus]);
 
   /* ==================== 启动 Setup ==================== */
@@ -481,6 +483,8 @@ export default function SecurityClient({ mode }: { mode: SecurityMode }) {
                   </p>
                   <div className="flex flex-col items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
                     {qrDataUrl ? (
+                      // 二维码是 data URL，next/image 无法进一步优化
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={qrDataUrl}
                         alt="TOTP 二维码"

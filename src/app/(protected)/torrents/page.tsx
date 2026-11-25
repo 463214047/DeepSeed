@@ -16,9 +16,6 @@ const CATEGORY_META: Record<string, { label: string; tagBg: string; tagText: str
   动漫: { label: "动漫", tagBg: "bg-violet-600", tagText: "text-white" },
   电影: { label: "电影", tagBg: "bg-amber-500", tagText: "text-white" },
   剧集: { label: "剧集", tagBg: "bg-rose-500", tagText: "text-white" },
-  音乐: { label: "音乐", tagBg: "bg-cyan-600", tagText: "text-white" },
-  体育: { label: "体育", tagBg: "bg-lime-600", tagText: "text-white" },
-  综艺: { label: "综艺", tagBg: "bg-fuchsia-500", tagText: "text-white" },
 };
 
 const FALLBACK_GRADIENT: Record<string, string> = {
@@ -27,9 +24,6 @@ const FALLBACK_GRADIENT: Record<string, string> = {
   动漫: "from-violet-400 to-fuchsia-500",
   电影: "from-rose-400 to-orange-400",
   剧集: "from-amber-400 to-yellow-600",
-  音乐: "from-cyan-400 to-blue-500",
-  体育: "from-lime-400 to-green-500",
-  综艺: "from-fuchsia-400 to-pink-500",
 };
 
 export type TorrentPost = {
@@ -88,7 +82,9 @@ async function fetchPosts(): Promise<TorrentPost[]> {
     // pg 的 numeric/bigint 类型返回的是 string — 统一转 number
     return rows.map((r) => {
       const ref = refsByPost.get(r.id);
-      const { external_link: _externalLink, ...rest } = r;
+      // external_link 只在服务端用于解析海报，不下发给客户端
+      const { external_link: externalLink, ...rest } = r;
+      void externalLink;
       return {
         ...rest,
         tmdb_poster: ref ? (posters.get(tmdbKey(ref)) ?? null) : null,

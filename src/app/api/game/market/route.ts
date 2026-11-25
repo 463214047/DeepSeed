@@ -269,7 +269,6 @@ export async function POST(req: Request) {
   }
 
   const { prices } = await currentPrices();
-  const unitName = itemType === "tohru" ? "张" : "天";
 
   try {
     if (body.action === "buy") {

@@ -144,7 +144,6 @@ export default function CommentsSection({ postId }: Props) {
   const composerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await fetch(`/api/posts/${postId}/comments`);
       const data = await res.json();
@@ -157,8 +156,17 @@ export default function CommentsSection({ postId }: Props) {
     }
   }, [postId]);
 
+  // postId 变化时回到加载态（渲染期调整，避免在 effect 里同步 setState）
+  const [prevPostId, setPrevPostId] = useState(postId);
+  if (postId !== prevPostId) {
+    setPrevPostId(postId);
+    setLoading(true);
+  }
+
   useEffect(() => {
-    load();
+    // 挂载/postId 变化后拉取评论，setState 均在 await 之后
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   const submit = async () => {

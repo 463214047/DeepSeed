@@ -79,8 +79,8 @@ export default function Editor({
 
   // 输入区始终是纯文本，普通文本模式下不解析任何语法
   const [source, setSource] = useState(content);
-  // 默认普通文本模式，可切换到 BBCode 模式使用 [b] 等标签
-  const [mode, setMode] = useState<EditMode>("text");
+  // 默认 BBCode 模式，可切换回普通文本
+  const [mode, setMode] = useState<EditMode>("bbcode");
   const [toolbarOpen, setToolbarOpen] = useState(false);
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);

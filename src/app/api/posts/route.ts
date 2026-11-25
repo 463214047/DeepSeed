@@ -25,6 +25,33 @@ async function ensureOnce() {
 const VALID_CATEGORIES = new Set(["游戏", "漫画", "动漫", "电影", "剧集"]);
 const VALID_FORUM_TAGS = new Set(["求助", "邀请", "分享", "讨论", "公告"]);
 
+/** GET 列表查询返回的行（pg 的 numeric/bigint 可能是 string） */
+type PostListRow = {
+  id: string;
+  post_type: string | null;
+  category: string;
+  title: string;
+  subtitle: string | null;
+  anonymous: boolean | null;
+  status: string | null;
+  author_name: string | null;
+  tags: string[] | null;
+  cover_url: string | null;
+  screenshot_urls: string[] | null;
+  external_link: string | null;
+  torrent_name: string | null;
+  torrent_size: string | number | null;
+  hot: boolean | null;
+  view_count: string | number | null;
+  like_count: string | number | null;
+  favorite_count: string | number | null;
+  comment_count: string | number | null;
+  seed_count: string | number | null;
+  leech_count: string | number | null;
+  download_count: string | number | null;
+  created_at: string;
+};
+
 export async function POST(req: Request) {
   try {
     await ensureOnce();
@@ -112,6 +139,12 @@ export async function POST(req: Request) {
     }
     const externalLinks = serializeExternalLinks(extResult.value);
 
+    // 动漫 / 电影 / 剧集必须关联 TMDB 作品
+    const needsTmdb = category === "动漫" || category === "电影" || category === "剧集";
+    if (!isForum && needsTmdb && !extractTmdbRef(externalLinks)) {
+      return NextResponse.json({ ok: false, message: "请选择 TMDB 作品" }, { status: 400 });
+    }
+
     const tagArr = Array.isArray(tags)
       ? tags
           .filter((t) => typeof t === "string" && t.trim())
@@ -122,30 +155,30 @@ export async function POST(req: Request) {
     const cover = typeof cover_url === "string" && cover_url.trim() ? cover_url.trim() : null;
 
     const shotArr = Array.isArray(screenshots)
-      ? screenshots
-          .filter((s) => typeof s === "string" && s.trim())
-          .slice(0, 5)
-          .map((s) => s.trim())
+      ? screenshots.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim())
       : [];
 
     const isAnonymous = Boolean(anonymous);
     const isAdult = Boolean(is_adult);
 
-    const torrentName =
-      torrent && typeof torrent === "object" && typeof (torrent as any).name === "string"
-        ? (torrent as any).name
+    // torrent 字段来自未知 JSON，这里先收敛成窄类型再取值
+    const torrentPayload =
+      torrent && typeof torrent === "object"
+        ? (torrent as { name?: unknown; size?: unknown; data?: unknown })
         : null;
+
+    const torrentName = typeof torrentPayload?.name === "string" ? torrentPayload.name : null;
 
     // 后端权威解析：前端传 torrent.data (base64) 时，后端自己用 bencode 算真实总大小
     let torrentSize: number | null =
-      torrent && typeof torrent === "object" && typeof (torrent as any).size === "number"
-        ? (torrent as any).size
-        : null;
+      typeof torrentPayload?.size === "number" ? torrentPayload.size : null;
 
-    const torrentData =
-      torrent && typeof torrent === "object" && typeof (torrent as any).data === "string"
-        ? (torrent as any).data
-        : null;
+    const torrentData = typeof torrentPayload?.data === "string" ? torrentPayload.data : null;
+
+    // 种子资源必须带 .torrent 文件（论坛帖不需要）
+    if (!isForum && (!torrentName || !torrentData)) {
+      return NextResponse.json({ ok: false, message: "请上传种子文件" }, { status: 400 });
+    }
 
     let torrentInfoHash: string | null = null;
     if (torrentData) {
@@ -299,7 +332,7 @@ export async function GET(req: Request) {
       sort === "hot" ? "hot DESC, like_count DESC, created_at DESC" : "hot DESC, created_at DESC";
 
     params.push(limit, offset);
-    const rows = await query<any>(
+    const rows = await query<PostListRow>(
       `SELECT id,
               post_type,
               category, title, subtitle,
@@ -332,7 +365,7 @@ export async function GET(req: Request) {
       const ref = refsByPost.get(postId);
       return ref ? (posters.get(tmdbKey(ref)) ?? null) : null;
     };
-    const list = rows.map((r: any) => ({
+    const list = rows.map((r) => ({
       id: r.id,
       post_type: r.post_type ?? "torrent",
       category: r.category,
@@ -355,7 +388,6 @@ export async function GET(req: Request) {
       download_count: Number(r.download_count ?? 0),
       created_at: r.created_at,
       author_name: r.anonymous ? null : (r.author_name ?? null),
-      author_email: r.author_email,
       anonymous: Boolean(r.anonymous),
     }));
 

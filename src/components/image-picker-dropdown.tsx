@@ -58,10 +58,16 @@ function uploadWithProgress(
 export default function ImagePickerDropdown({
   onClose,
   onPick,
+  maxFiles = MAX_FILES,
+  inline = false,
 }: {
   onClose: () => void;
   /** 返回最终图片地址（可多张） */
   onPick: (urls: string[]) => void;
+  /** 单次最多可插入张数，默认 5 */
+  maxFiles?: number;
+  /** 常驻面板（不悬浮、不自动关闭），用于发布页等固定区域 */
+  inline?: boolean;
 }) {
   const [url, setUrl] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -79,14 +85,14 @@ export default function ImagePickerDropdown({
   }
 
   async function addFiles(files: File[]) {
-    const remaining = MAX_FILES - items.length;
+    const remaining = maxFiles - items.length;
     if (remaining <= 0) {
-      setError(`最多 ${MAX_FILES} 张`);
+      setError(`最多 ${maxFiles} 张`);
       return;
     }
 
     const picked = files.slice(0, remaining);
-    const overLimit = files.length > remaining ? `最多 ${MAX_FILES} 张，已忽略多余的图片` : "";
+    const overLimit = files.length > remaining ? `最多 ${maxFiles} 张，已忽略多余的图片` : "";
 
     const accepted: File[] = [];
     let nextError = "";
@@ -157,19 +163,33 @@ export default function ImagePickerDropdown({
       return;
     }
     onPick([link]);
-    onClose();
+    if (inline) {
+      setUrl("");
+      setError("");
+    } else {
+      onClose();
+    }
   }
 
   function confirm() {
     if (doneUrls.length === 0) return;
     onPick(doneUrls);
-    onClose();
+    if (inline) {
+      // 常驻面板：插入后清空本次上传记录，继续等待下一批
+      setItems([]);
+    } else {
+      onClose();
+    }
   }
 
   return (
     <div
       onMouseDown={(e) => e.stopPropagation()}
-      className="absolute left-0 top-[calc(100%+6px)] z-30 w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl shadow-slate-900/10"
+      className={
+        inline
+          ? "w-full rounded-xl border border-slate-200 bg-white p-3"
+          : "absolute left-0 top-[calc(100%+6px)] z-30 w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl shadow-slate-900/10"
+      }
     >
       <form onSubmit={submitUrl} className="flex items-center gap-2">
         <input

@@ -10,9 +10,6 @@ const CATEGORY_META: Record<string, { label: string; tagBg: string; tagText: str
   动漫: { label: "动漫", tagBg: "bg-violet-600", tagText: "text-white" },
   电影: { label: "电影", tagBg: "bg-amber-500", tagText: "text-white" },
   剧集: { label: "剧集", tagBg: "bg-rose-500", tagText: "text-white" },
-  音乐: { label: "音乐", tagBg: "bg-cyan-600", tagText: "text-white" },
-  体育: { label: "体育", tagBg: "bg-lime-600", tagText: "text-white" },
-  综艺: { label: "综艺", tagBg: "bg-fuchsia-500", tagText: "text-white" },
 };
 
 type PostItem = {
@@ -43,12 +40,10 @@ export default function ProfileTabs() {
     forums: null,
     favorites: null,
   });
-  const [loadingTab, setLoadingTab] = useState<TabKind | null>("torrents");
 
   async function fetchTab(t: TabKind) {
     // 已缓存就跳过
     if (cache[t] != null) return;
-    setLoadingTab(t);
     try {
       let url: string;
       if (t === "torrents") url = "/api/posts?mine=1&type=torrent&limit=50";
@@ -64,18 +59,19 @@ export default function ProfileTabs() {
       }
     } catch {
       setCache((prev) => ({ ...prev, [t]: [] }));
-    } finally {
-      setLoadingTab((cur) => (cur === t ? null : cur));
     }
   }
 
   useEffect(() => {
-    fetchTab(tab);
+    // 挂载/切换 tab 后拉数据，setState 全部发生在 await 之后，属于 effect 的标准数据拉取用法
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchTab(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   const items = cache[tab] ?? [];
-  const loading = loadingTab === tab;
+  // 缓存为空（还没拉取过）即为加载中
+  const loading = cache[tab] === null;
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03] [[data-background=tohru]_&]:bg-transparent">

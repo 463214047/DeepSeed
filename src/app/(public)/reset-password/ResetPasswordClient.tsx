@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Spinner } from "../login/LoginForm";
+import { Spinner } from "@/components/spinner";
 
 export default function ResetPasswordClient({ email }: { email: string | null }) {
   const router = useRouter();

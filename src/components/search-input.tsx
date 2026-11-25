@@ -72,9 +72,6 @@ export default function SearchInput() {
     { label: "动漫", emoji: "🎬" },
     { label: "电影", emoji: "🎥" },
     { label: "剧集", emoji: "📺" },
-    { label: "音乐", emoji: "🎵" },
-    { label: "体育", emoji: "⚽" },
-    { label: "综艺", emoji: "🎤" },
   ] as const;
 
   const TORRENT_TAGS = [

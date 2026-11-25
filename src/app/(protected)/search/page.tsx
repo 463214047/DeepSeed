@@ -15,9 +15,6 @@ const CATEGORY_META: Record<
   动漫: { label: "动漫", tagBg: "bg-violet-600", tagText: "text-white", emoji: "🎬" },
   电影: { label: "电影", tagBg: "bg-amber-500", tagText: "text-white", emoji: "🎥" },
   剧集: { label: "剧集", tagBg: "bg-rose-500", tagText: "text-white", emoji: "📺" },
-  音乐: { label: "音乐", tagBg: "bg-cyan-600", tagText: "text-white", emoji: "🎵" },
-  体育: { label: "体育", tagBg: "bg-lime-600", tagText: "text-white", emoji: "⚽" },
-  综艺: { label: "综艺", tagBg: "bg-fuchsia-500", tagText: "text-white", emoji: "🎤" },
 };
 
 const FALLBACK_GRADIENT: Record<string, string> = {
@@ -26,9 +23,6 @@ const FALLBACK_GRADIENT: Record<string, string> = {
   动漫: "from-violet-400 to-fuchsia-500",
   电影: "from-rose-400 to-orange-400",
   剧集: "from-amber-400 to-yellow-600",
-  音乐: "from-cyan-400 to-blue-500",
-  体育: "from-lime-400 to-green-500",
-  综艺: "from-fuchsia-400 to-pink-500",
 };
 
 // HomePost 字段（来自 list-container 的 import，这里用结构化 duck typing 避免循环依赖）
@@ -270,7 +264,7 @@ export default async function SearchPage({
         <>
           {doTorrent && torrentRows.length > 0 && (
             <ListContainer
-              posts={torrentRows as any}
+              posts={torrentRows}
               categoryMeta={CATEGORY_META}
               fallbackGradient={FALLBACK_GRADIENT}
             />

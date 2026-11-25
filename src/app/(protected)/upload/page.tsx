@@ -4,14 +4,34 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Check, ChevronDown, Save, Send, ShieldAlert, ShieldCheck } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Save,
+  Send,
+  ShieldAlert,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import Editor from "@/components/editor-lazy";
+import ImagePickerDropdown from "@/components/image-picker-dropdown";
+import { Spinner } from "@/components/spinner";
 import { parseTorrentTotalSize } from "@/lib/bencode";
 import { extractTmdbRef } from "@/lib/tmdb-link";
 import { parseExternalLinks, type ExternalLink } from "@/lib/external-links";
 import { tagStyle } from "@/lib/tags";
 
-type Category = "游戏" | "漫画" | "动漫" | "电影" | "剧集" | "音乐" | "体育" | "综艺";
+type Category = "游戏" | "漫画" | "动漫" | "电影" | "剧集";
+
+/** TMDB 搜索候选 / 已选作品（来自 /api/tmdb/search） */
+type TmdbItem = {
+  mediaType: "movie" | "tv";
+  id: number;
+  title: string;
+  year: string | null;
+  posterUrl: string | null;
+  rating: number | null;
+};
 
 const CATEGORIES: { key: Category; style: string }[] = [
   { key: "游戏", style: "bg-blue-600 text-white" },
@@ -19,9 +39,6 @@ const CATEGORIES: { key: Category; style: string }[] = [
   { key: "动漫", style: "bg-violet-600 text-white" },
   { key: "电影", style: "bg-amber-500 text-white" },
   { key: "剧集", style: "bg-rose-500 text-white" },
-  { key: "音乐", style: "bg-cyan-600 text-white" },
-  { key: "体育", style: "bg-lime-600 text-white" },
-  { key: "综艺", style: "bg-fuchsia-500 text-white" },
 ];
 
 // 预置标签（多选，配色与详情页/列表共用 src/lib/tags.ts）
@@ -77,12 +94,18 @@ export default function UploadPage() {
   const [category, setCategory] = useState<Category | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [mediainfo, setMediainfo] = useState("");
+  const [screenshots, setScreenshots] = useState<string[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(!!editId);
   const [editError, setEditError] = useState("");
   const [isAdult, setIsAdult] = useState(false);
+  /** TMDB 链接输入框（也作为搜索关键词；动漫 / 电影 / 剧集必填） */
   const [tmdbLink, setTmdbLink] = useState("");
+  const [tmdbResults, setTmdbResults] = useState<TmdbItem[]>([]);
+  const [tmdbSearching, setTmdbSearching] = useState(false);
+  const [tmdbError, setTmdbError] = useState("");
   const [otherLinks, setOtherLinks] = useState<ExternalLink[]>([]);
   const [anonymous, setAnonymous] = useState(false);
   const [rulesAgreed, setRulesAgreed] = useState(true);
@@ -118,11 +141,15 @@ export default function UploadPage() {
         setTags(p.tags ?? []);
         setAnonymous(Boolean(p.anonymous));
         setIsAdult(Boolean(p.is_adult));
+        setMediainfo(p.mediainfo ?? "");
+        // 接口返回的是数据库列名
+        setScreenshots(Array.isArray(p.screenshot_urls) ? p.screenshot_urls : []);
 
-        // 外链：TMDB 回填到专用输入框，其他外链（豆瓣等）原样保留
+        // 外链：TMDB 链接回填到输入框，其他外链（豆瓣等）原样保留
         const links = parseExternalLinks(p.external_link ?? null);
-        setTmdbLink(links.find((l) => extractTmdbRef(l.url))?.url ?? "");
         setOtherLinks(links.filter((l) => !extractTmdbRef(l.url)));
+        const savedUrl = links.find((l) => extractTmdbRef(l.url))?.url;
+        if (savedUrl) setTmdbLink(savedUrl);
 
         if (p.torrent_name) {
           setTorrentName(p.torrent_name);
@@ -168,21 +195,66 @@ export default function UploadPage() {
     };
   }, [catOpen]);
 
-  // TMDB 链接：空视为合法（选填）；填了就必须能解析出 movie / tv
+  // 动漫 / 电影 / 剧集必须填写有效的 TMDB 链接；其他分类不展示该字段
+  const tmdbRequired = category === "动漫" || category === "电影" || category === "剧集";
   const tmdbRef = extractTmdbRef(tmdbLink);
-  const tmdbLinkValid = tmdbLink.trim() === "" || tmdbRef !== null;
   const externalLinks: ExternalLink[] = [
     ...otherLinks,
-    ...(tmdbRef && tmdbLink.trim() ? [{ name: "TMDB", url: tmdbLink.trim() }] : []),
+    ...(tmdbRef
+      ? [
+          {
+            name: "TMDB",
+            url: `https://www.themoviedb.org/${tmdbRef.mediaType}/${tmdbRef.id}`,
+          },
+        ]
+      : []),
   ];
 
   const canSubmit =
     title.trim().length > 0 &&
     category !== null &&
     rulesAgreed &&
-    tmdbLinkValid &&
+    (!tmdbRequired || tmdbRef !== null) &&
     torrentName.length > 0 &&
+    // 新建时必须等种子内容读取完成；编辑时可沿用原种子
+    (editing || torrentBase64.length > 0) &&
     !submitting;
+
+  /** 按输入框内容搜索 TMDB 作品（输入框也可能是已粘贴的链接） */
+  async function searchTmdb() {
+    if (tmdbSearching) return;
+    const q = tmdbLink.trim() || title.trim();
+    if (!q) {
+      setTmdbError("请输入关键字后再搜索");
+      return;
+    }
+    if (extractTmdbRef(q)) return; // 已经是有效链接，无需搜索
+
+    setTmdbSearching(true);
+    setTmdbError("");
+    setTmdbResults([]);
+    try {
+      const res = await fetch(`/api/tmdb/search?q=${encodeURIComponent(q)}`, {
+        cache: "no-store",
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        results?: TmdbItem[];
+      };
+      if (!res.ok || !data.ok) {
+        setTmdbError(data.message || "搜索失败，请稍后再试");
+        return;
+      }
+      const results = data.results ?? [];
+      setTmdbResults(results);
+      if (results.length === 0) setTmdbError("没有找到作品，换个关键词试试");
+    } catch {
+      setTmdbError("网络错误，请稍后再试");
+    } finally {
+      setTmdbSearching(false);
+    }
+  }
 
   async function handleSubmit() {
     if (!canSubmit || submitting) return;
@@ -198,6 +270,7 @@ export default function UploadPage() {
         category,
         tags,
         cover_url: extractFirstImage(content),
+        screenshots,
         anonymous,
         rules_agreed: rulesAgreed,
         is_adult: isAdult,
@@ -339,7 +412,7 @@ export default function UploadPage() {
         >
           <div className="space-y-5">
             {/* 种子文件 */}
-            <Field label="种子文件">
+            <Field label="种子文件" required>
               {torrentName ? (
                 <div className="group flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50/80 to-white px-4 py-3 transition-all hover:border-slate-300 hover:shadow-sm">
                   <div className="min-w-0 flex items-center gap-3">
@@ -423,27 +496,85 @@ export default function UploadPage() {
                 className="block w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
               />
             </Field>
-            {/* TMDB 链接 */}
-            <Field label="TMDB 链接">
-              <div>
-                <input
-                  type="text"
-                  value={tmdbLink}
-                  onChange={(e) => setTmdbLink(e.target.value)}
+            {/* TMDB 链接（动漫 / 电影 / 剧集必填） */}
+            {tmdbRequired && (
+              <Field label="TMDB 链接" required>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={tmdbLink}
+                    onChange={(e) => {
+                      setTmdbLink(e.target.value);
+                      setTmdbResults([]);
+                      setTmdbError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void searchTmdb();
+                      }
+                    }}
+                    placeholder="输入关键字后按回车搜索，或直接输入有效链接"
+                    className="block w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 pr-10 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
+                  />
+                  {tmdbSearching && (
+                    <Spinner className="absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                  )}
+                </div>
 
-                  className="block w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
-                />
-                {tmdbLink.trim() !== "" && (
-                  <p
-                    className={`mt-1.5 text-xs ${tmdbLinkValid ? "text-emerald-600" : "text-rose-500"}`}
-                  >
-                    {tmdbRef
-                      ? `已识别 TMDB ${tmdbRef.mediaType === "tv" ? "剧集" : "电影"} #${tmdbRef.id}，详情页将展示作品介绍`
-                      : "不是有效的 TMDB 链接（应为 themoviedb.org 的 movie / tv 页面）"}
-                  </p>
+                {tmdbError && <p className="mt-1.5 text-xs text-rose-500">{tmdbError}</p>}
+
+                {tmdbResults.length > 0 && (
+                  <ul className="mt-2 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    {tmdbResults.map((item) => (
+                      <li key={`${item.mediaType}-${item.id}`}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // 选中即把规范链接填进输入框
+                            setTmdbLink(
+                              `https://www.themoviedb.org/${item.mediaType}/${item.id}`,
+                            );
+                            setTmdbResults([]);
+                            setTmdbError("");
+                          }}
+                          className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50"
+                        >
+                          {item.posterUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.posterUrl}
+                              alt=""
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              className="h-14 w-10 shrink-0 rounded object-cover ring-1 ring-slate-200"
+                            />
+                          ) : (
+                            <span className="grid h-14 w-10 shrink-0 place-items-center rounded bg-slate-100 text-[10px] text-slate-400">
+                              暂无
+                            </span>
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-slate-900">
+                              {item.title}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-slate-500">
+                              {[
+                                item.mediaType === "tv" ? "剧集" : "电影",
+                                item.year,
+                                item.rating ? `★ ${item.rating}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-              </div>
-            </Field>
+              </Field>
+            )}
             {/* 介绍（正文编辑器）*/}
             <Field label="介绍">
               <div className="rounded-2xl transition focus-within:ring-4 focus-within:ring-slate-900/5">
@@ -459,6 +590,46 @@ export default function UploadPage() {
                 placeholder="请粘贴 Mediainfo / BDInfo 解析的信息（英语并且是 text 格式）"
                 className="block w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 font-mono text-xs leading-relaxed text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
               />
+            </Field>
+            {/* 截图 — 与编辑器里插入图片共用同一套交互 */}
+            <Field label="截图">
+              <div className="space-y-3">
+                <ImagePickerDropdown
+                  inline
+                  maxFiles={999}
+                  onClose={() => {}}
+                  onPick={(urls) => {
+                    setScreenshots((list) => [...list, ...urls.filter((url) => !list.includes(url))]);
+                  }}
+                />
+
+                {screenshots.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {screenshots.map((url) => (
+                      <div
+                        key={url}
+                        className="group relative aspect-video w-32 overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt="截图预览"
+                          loading="lazy"
+                          className="size-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setScreenshots((list) => list.filter((s) => s !== url))}
+                          aria-label="移除截图"
+                          className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-slate-900/55 text-white opacity-0 backdrop-blur transition group-hover:opacity-100 hover:bg-slate-900/80"
+                        >
+                          <X className="size-3" strokeWidth={2.6} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Field>
             {/* 分类 */}
             <Field label="分类" required>

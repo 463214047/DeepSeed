@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { UserName } from "@/components/rainbow-name";
+import { Spinner } from "@/components/spinner";
 import { CompactEditor } from "@/components/editor-lazy";
 import { isRichText, richTextToPlainText, sanitizeRichHtml } from "@/lib/rich-text";
 
@@ -62,20 +63,19 @@ const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
   { key: "outbox", label: "发件箱", icon: Send },
 ];
 
-const EMPTY_COPY: Record<TabKey, { title: string; description: string; icon: LucideIcon }> = {
+const EMPTY_COPY: Record<TabKey, { title: string; icon: LucideIcon }> = {
   notifications: {
     title: "暂无通知",
-    description: "新的系统通知和回复会显示在这里",
     icon: Bell,
   },
   inbox: {
     title: "暂无收件",
-    description: "其他人发给你的消息会显示在这里",
+  
     icon: Inbox,
   },
   outbox: {
     title: "暂无发件",
-    description: "你发出的消息会显示在这里",
+  
     icon: Send,
   },
 };
@@ -443,7 +443,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 }
 
 function EmptyState({ tab }: { tab: TabKey }) {
-  const { title, description, icon: Icon } = EMPTY_COPY[tab];
+  const { title,  icon: Icon } = EMPTY_COPY[tab];
 
   return (
     <div className="px-6 py-16 text-center">
@@ -451,7 +451,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
         <Icon className="size-6" strokeWidth={1.6} />
       </span>
       <p className="mt-4 text-sm font-semibold text-slate-700">{title}</p>
-      <p className="mt-1 text-xs text-slate-400">{description}</p>
+   
     </div>
   );
 }
@@ -805,9 +805,9 @@ function InboxDetailDialog({
               type="button"
               onClick={handleReply}
               disabled={sending || !hasReply}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-w-28 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Send className="size-4" strokeWidth={1.8} />
+              {sending ? <Spinner /> : <Send className="size-4" strokeWidth={1.8} />}
               {sending ? "发送中…" : "回复"}
             </button>
           </div>

@@ -37,7 +37,19 @@ export async function GET(req: Request) {
 
     sql += ` ORDER BY created_at DESC LIMIT 200`;
 
-    const rows = await query<any>(sql, params);
+    const rows = await query<{
+      id: string;
+      type: string;
+      title: string;
+      content: string;
+      source_type: string | null;
+      source_id: string | null;
+      source_title: string | null;
+      reply_author: string | null;
+      reply_avatar: string | null;
+      is_read: boolean;
+      created_at: string;
+    }>(sql, params);
 
     // 同时返回各分类的未读数（前端 Tab 徽标用）
     const counts = await query<{ type: string; unread: string }>(

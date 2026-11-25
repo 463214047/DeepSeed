@@ -12,9 +12,17 @@ type Props = {
   userName: string | null;
   myUid: number | null;
   unreadTotal: number;
+  isAdmin?: boolean;
 };
 
-export default function NavbarInner({ loggedIn, userImage, userName, myUid, unreadTotal }: Props) {
+export default function NavbarInner({
+  loggedIn,
+  userImage,
+  userName,
+  myUid,
+  unreadTotal,
+  isAdmin = false,
+}: Props) {
   const pathname = usePathname();
   const [unread, setUnread] = useState(unreadTotal);
 
@@ -163,8 +171,36 @@ export default function NavbarInner({ loggedIn, userImage, userName, myUid, unre
           <SearchInput />
         </div>
 
-        {/* 右侧：上传 + 消息 + 头像 */}
+        {/* 右侧：工单（仅管理员） + 上传 + 消息 + 头像 */}
         <div className="flex shrink-0 items-center gap-3">
+          {isAdmin && (
+            <Link
+              href="/admin/tickets"
+              aria-label="工单收件箱"
+              className="group/tickets grid size-10 shrink-0 place-items-center rounded-full text-slate-500 outline-none ring-offset-2 transition-all duration-300 hover:scale-110 hover:bg-slate-100 hover:text-slate-900 active:scale-95 focus-visible:ring-2 focus-visible:ring-slate-400"
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+                className="size-7 transition-transform duration-300 group-hover/tickets:-translate-y-0.5"
+              >
+                <path
+                  d="M4 13.5V6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5v7"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M4 13.5h4l1 2h6l1-2h4v4A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-4Z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Link>
+          )}
+
           {/* 上传 */}
           <Link
             href="/upload"

@@ -8,7 +8,6 @@ type StatusResp = {
 
 export default function AccountPage() {
   const [status, setStatus] = useState<StatusResp | null>(null);
-  const [mounted, setMounted] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // 设置密码表单
@@ -30,8 +29,9 @@ export default function AccountPage() {
   }, []);
 
   useEffect(() => {
-    setMounted(true);
-    fetchStatus();
+    // 挂载后拉取状态，setState 均在 await 之后
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchStatus();
   }, [fetchStatus]);
 
   async function handleSetPassword(e: React.FormEvent) {
@@ -74,9 +74,9 @@ export default function AccountPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6">
-      {mounted && !status && <div className="text-xs text-slate-400">加载中…</div>}
+      {!status && <div className="text-xs text-slate-400">加载中…</div>}
 
-      {mounted && !!status && isOAuthOnly && (
+      {!!status && isOAuthOnly && (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 [[data-background=tohru]_&]:bg-transparent">
           <h2 className="text-base font-semibold text-slate-900">设置登录密码</h2>
           <p className="mt-1 text-xs text-slate-500">

@@ -454,6 +454,33 @@ export async function ensureSchema(): Promise<void> {
       PRIMARY KEY (media_type, tmdb_id)
     );
 
+    -- ====== 联系管理工单（不属于私信，全体管理员共享） ======
+
+    CREATE TABLE IF NOT EXISTS public.contact_tickets (
+      id            BIGSERIAL PRIMARY KEY,
+      user_email    TEXT NOT NULL,
+      content       TEXT NOT NULL,                    -- 用户提交内容（HTML，与帖子正文一致）
+      status        TEXT NOT NULL DEFAULT 'open',     -- open | processing | resolved
+      handled_by    TEXT,                             -- 最后处理该工单的管理员邮箱
+      last_reply_at TIMESTAMPTZ,                      -- 最近一次管理员回复时间
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS contact_tickets_status_idx
+      ON public.contact_tickets (status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS contact_tickets_user_idx
+      ON public.contact_tickets (user_email, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS public.contact_ticket_replies (
+      id           BIGSERIAL PRIMARY KEY,
+      ticket_id    BIGINT NOT NULL REFERENCES public.contact_tickets(id) ON DELETE CASCADE,
+      sender_email TEXT NOT NULL,
+      is_admin     BOOLEAN NOT NULL DEFAULT FALSE,
+      content      TEXT NOT NULL,                     -- 纯文本，展示时保留换行
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS contact_ticket_replies_ticket_idx
+      ON public.contact_ticket_replies (ticket_id, created_at);
+
     -- ====== R2 存储用量（防止超过免费额度） ======
 
     -- 单行计数器：累计已上传字节数

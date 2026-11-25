@@ -16,7 +16,6 @@ const TAG_OPTIONS: { key: TopicTag; style: string }[] = [
 ];
 
 const MAX_TITLE = 80;
-const MAX_CONTENT = 5000;
 
 export default function ForumNewPage() {
   const router = useRouter();

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useSyncExternalStore } from "react";
 
 type Props = {
   postId: string;
 };
 
 const STORAGE_KEY = "astra_favorites";
+/** 同一标签页内收藏变更的广播事件（storage 事件只在其他标签页触发） */
+const FAVORITES_EVENT = "astra:favorites-change";
 
 function getFavorites(): string[] {
   try {
@@ -23,27 +25,32 @@ function saveFavorites(ids: string[]) {
   } catch {
     // ignore
   }
+  window.dispatchEvent(new Event(FAVORITES_EVENT));
+}
+
+function subscribeFavorites(onChange: () => void) {
+  window.addEventListener(FAVORITES_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(FAVORITES_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
 }
 
 export default function FavoriteButton({ postId }: Props) {
-  const [favorited, setFavorited] = useState(false);
+  // 直接订阅 localStorage，避免「挂载后再 setState」的额外渲染
+  const favorited = useSyncExternalStore(
+    subscribeFavorites,
+    () => getFavorites().includes(postId),
+    () => false,
+  );
   const [animating, setAnimating] = useState(false);
-
-  useEffect(() => {
-    setFavorited(getFavorites().includes(postId));
-  }, [postId]);
 
   const toggle = useCallback(() => {
     const favs = getFavorites();
     const idx = favs.indexOf(postId);
-    let next: string[];
-    if (idx >= 0) {
-      next = favs.filter((id) => id !== postId);
-    } else {
-      next = [...favs, postId];
-    }
+    const next = idx >= 0 ? favs.filter((id) => id !== postId) : [...favs, postId];
     saveFavorites(next);
-    setFavorited(idx < 0);
     setAnimating(true);
     setTimeout(() => setAnimating(false), 300);
   }, [postId]);

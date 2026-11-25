@@ -21,15 +21,15 @@ export default function ScreenshotGallery({ urls, startIndex, onClose }: Props) 
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
-  // 受控模式：startIndex 变化时同步
-  useEffect(() => {
-    if (controlled) {
-      setOpen(true);
-      setIndex(startIndex!);
-      setScale(1);
-      setOffset({ x: 0, y: 0 });
-    }
-  }, [controlled, startIndex]);
+  // 受控模式：startIndex 变化时重置视图
+  // 在渲染期直接调整 state（React 官方推荐写法），比放到 effect 里少一轮级联渲染
+  const [prevStartIndex, setPrevStartIndex] = useState(startIndex);
+  if (startIndex !== prevStartIndex) {
+    setPrevStartIndex(startIndex);
+    setIndex(startIndex ?? 0);
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  }
 
   // 重置视图
   const resetView = useCallback(() => {
@@ -51,10 +51,13 @@ export default function ScreenshotGallery({ urls, startIndex, onClose }: Props) 
     setOpen(true);
   };
 
-  // 切换图片时重置
-  useEffect(() => {
-    resetView();
-  }, [index, resetView]);
+  // 切换图片时重置缩放与位移（同样在渲染期调整）
+  const [prevIndex, setPrevIndex] = useState(index);
+  if (index !== prevIndex) {
+    setPrevIndex(index);
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  }
 
   // ESC / ← → 键盘
   useEffect(() => {
